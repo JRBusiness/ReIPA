@@ -1,0 +1,13 @@
+[package]
+name = "reipa-bench"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "reipa-bench"
+path = "src/main.rs"
+
+[dependencies]
+reipa-macho.workspace = true
+reipa-arm64.workspace = true
+reipa-objc.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "reipa-gui"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "reipa-gui"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+rfd = "0.15"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["ico"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

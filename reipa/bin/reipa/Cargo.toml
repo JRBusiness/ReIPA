@@ -1,0 +1,19 @@
+[package]
+name = "reipa"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "reipa"
+path = "src/main.rs"
+
+[dependencies]
+reipa-image.workspace = true
+reipa-macho.workspace = true
+reipa-objc.workspace = true
+reipa-swift.workspace = true
+reipa-arm64.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+reipa-macho.workspace = true

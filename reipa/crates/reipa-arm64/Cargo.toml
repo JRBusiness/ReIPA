@@ -1,0 +1,4 @@
+[package]
+name = "reipa-arm64"
+edition.workspace = true
+version.workspace = true

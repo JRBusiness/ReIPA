@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/reipa-macho",
+    "crates/reipa-image",
+    "crates/reipa-objc",
+    "crates/reipa-swift",
+    "crates/reipa-arm64",
+    "bin/reipa",
+    "bin/reipa-bench",
+    "bin/reipa-gui",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+insta = "1"
+reipa-macho = { path = "crates/reipa-macho" }
+reipa-image = { path = "crates/reipa-image" }
+reipa-objc = { path = "crates/reipa-objc" }
+reipa-swift = { path = "crates/reipa-swift" }
+reipa-arm64 = { path = "crates/reipa-arm64" }
