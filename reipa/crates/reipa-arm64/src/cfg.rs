@@ -43,16 +43,17 @@ pub fn build_blocks(insns: &[Insn]) -> Vec<Block> {
     for (idx, ins) in insns.iter().enumerate() {
         if leaders.contains(&ins.addr) && !cur.is_empty() {
             let s = start;
-            blocks.push(Block { start: s, insns: std::mem::take(&mut cur), succ: vec![ins.addr] });
+            blocks.push(Block {
+                start: s,
+                insns: std::mem::take(&mut cur),
+                succ: vec![ins.addr],
+            });
             start = ins.addr;
         }
         let flow = ins.flow.clone();
         cur.push(ins.clone());
         let is_last = idx + 1 == insns.len();
-        let terminates = !matches!(
-            flow,
-            Flow::Fallthrough | Flow::Call(_) | Flow::IndirectCall
-        );
+        let terminates = !matches!(flow, Flow::Fallthrough | Flow::Call(_) | Flow::IndirectCall);
         if terminates || is_last {
             let next = ins.addr + 4;
             let succ = match flow {
@@ -61,12 +62,20 @@ pub fn build_blocks(insns: &[Insn]) -> Vec<Block> {
                 Flow::Return | Flow::Indirect => Vec::new(),
                 Flow::Call(_) | Flow::IndirectCall | Flow::Fallthrough => filt(&[next], in_range),
             };
-            blocks.push(Block { start, insns: std::mem::take(&mut cur), succ });
+            blocks.push(Block {
+                start,
+                insns: std::mem::take(&mut cur),
+                succ,
+            });
             start = next;
         }
     }
     if !cur.is_empty() {
-        blocks.push(Block { start, insns: cur, succ: Vec::new() });
+        blocks.push(Block {
+            start,
+            insns: cur,
+            succ: Vec::new(),
+        });
     }
     blocks
 }

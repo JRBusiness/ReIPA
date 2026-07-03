@@ -79,8 +79,7 @@ impl MachOImage {
                 binds = parse_dyld_info_binds(slice.data, lc.body, &segments);
             }
             if lc.cmd == LC_DYLD_CHAINED_FIXUPS {
-                chained_fixups =
-                    parse_chained_fixups(slice.data, lc.body, &segments, text_vmaddr);
+                chained_fixups = parse_chained_fixups(slice.data, lc.body, &segments, text_vmaddr);
             }
         }
 

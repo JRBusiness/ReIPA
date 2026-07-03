@@ -56,7 +56,14 @@ pub fn parse_segment(body: &[u8]) -> Result<Segment> {
             flags,
         });
     }
-    Ok(Segment { segname, vmaddr, vmsize, fileoff, filesize, sections })
+    Ok(Segment {
+        segname,
+        vmaddr,
+        vmsize,
+        fileoff,
+        filesize,
+        sections,
+    })
 }
 
 #[cfg(test)]

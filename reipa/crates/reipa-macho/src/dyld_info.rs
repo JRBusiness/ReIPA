@@ -77,7 +77,10 @@ fn run_bind_stream(s: &[u8], segments: &[Segment], out: &mut Vec<Bind>) {
     let record = |seg_index: usize, seg_offset: u64, symbol: &str, out: &mut Vec<Bind>| {
         if !symbol.is_empty() {
             if let Some(a) = seg_addr(segments, seg_index, seg_offset) {
-                out.push(Bind { address: a, symbol: symbol.to_string() });
+                out.push(Bind {
+                    address: a,
+                    symbol: symbol.to_string(),
+                });
             }
         }
     };

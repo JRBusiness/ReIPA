@@ -10,7 +10,9 @@ pub struct Symbol {
 }
 
 fn read_c_str(file: &[u8], stroff: usize, strsize: usize, n_strx: u32) -> Result<String> {
-    let start = stroff.checked_add(n_strx as usize).ok_or(Error::Eof(stroff))?;
+    let start = stroff
+        .checked_add(n_strx as usize)
+        .ok_or(Error::Eof(stroff))?;
     let table_end = stroff.checked_add(strsize).ok_or(Error::Eof(stroff))?;
     if start > table_end || table_end > file.len() {
         return Err(Error::Malformed("string index out of range"));
@@ -36,7 +38,12 @@ pub fn parse_symtab(file: &[u8], body: &[u8]) -> Result<Vec<Symbol>> {
         let _n_desc = sr.read_u16()?;
         let n_value = sr.read_u64()?;
         let name = read_c_str(file, stroff, strsize, n_strx)?;
-        out.push(Symbol { name, value: n_value, n_type, n_sect });
+        out.push(Symbol {
+            name,
+            value: n_value,
+            n_type,
+            n_sect,
+        });
     }
     Ok(out)
 }

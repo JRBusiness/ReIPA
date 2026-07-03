@@ -1,5 +1,5 @@
-use reipa_macho::MachOImage;
 use reipa_macho::fat::select_arm64_slice;
+use reipa_macho::MachOImage;
 
 pub struct FoundString {
     pub addr: u64,
@@ -85,8 +85,10 @@ mod tests {
         let strings = b"hi\0bye\0";
         let sect_size = declared_size.unwrap_or(strings.len() as u64);
         let mut sect = Vec::new();
-        let mut sn = b"__cstring".to_vec(); sn.resize(16, 0);
-        let mut sg = b"__TEXT".to_vec(); sg.resize(16, 0);
+        let mut sn = b"__cstring".to_vec();
+        sn.resize(16, 0);
+        let mut sg = b"__TEXT".to_vec();
+        sg.resize(16, 0);
         sect.extend_from_slice(&sn);
         sect.extend_from_slice(&sg);
         sect.extend_from_slice(&section_addr.to_le_bytes());
@@ -102,7 +104,8 @@ mod tests {
         sect.extend_from_slice(&0u32.to_le_bytes());
 
         let mut seg = Vec::new();
-        let mut segn = b"__TEXT".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__TEXT".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
         seg.extend_from_slice(&0x4000u64.to_le_bytes());
@@ -160,7 +163,11 @@ mod tests {
     fn extracts_cstrings_with_addresses() {
         let bytes = build_with_cstring();
         let img = Image::load(&bytes).unwrap();
-        let vals: Vec<_> = img.strings.iter().map(|s| (s.addr, s.value.as_str())).collect();
+        let vals: Vec<_> = img
+            .strings
+            .iter()
+            .map(|s| (s.addr, s.value.as_str()))
+            .collect();
         assert!(vals.contains(&(0x2000, "hi")));
         assert!(vals.contains(&(0x2003, "bye")));
     }
@@ -185,7 +192,11 @@ mod tests {
         let thin = build_with_cstring();
         let fat = wrap_fat(&thin);
         let img = Image::load(&fat).unwrap();
-        let vals: Vec<_> = img.strings.iter().map(|s| (s.addr, s.value.as_str())).collect();
+        let vals: Vec<_> = img
+            .strings
+            .iter()
+            .map(|s| (s.addr, s.value.as_str()))
+            .collect();
         assert!(vals.contains(&(0x2000, "hi")), "got {vals:?}");
         assert!(vals.contains(&(0x2003, "bye")), "got {vals:?}");
     }

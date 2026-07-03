@@ -13,7 +13,11 @@ pub fn parse_encryption(body: &[u8]) -> Result<Encryption> {
     let cryptoff = r.read_u32()?;
     let cryptsize = r.read_u32()?;
     let cryptid = r.read_u32()?;
-    Ok(Encryption { cryptid, cryptoff, cryptsize })
+    Ok(Encryption {
+        cryptid,
+        cryptoff,
+        cryptsize,
+    })
 }
 
 pub fn parse_uuid(body: &[u8]) -> Result<[u8; 16]> {
@@ -28,7 +32,9 @@ pub fn parse_function_starts(file: &[u8], body: &[u8], text_vmaddr: u64) -> Resu
     let mut r = Reader::new(body);
     let dataoff = r.read_u32()? as usize;
     let datasize = r.read_u32()? as usize;
-    let end = dataoff.checked_add(datasize).ok_or(crate::Error::Eof(dataoff))?;
+    let end = dataoff
+        .checked_add(datasize)
+        .ok_or(crate::Error::Eof(dataoff))?;
     if end > file.len() {
         return Err(crate::Error::Eof(dataoff));
     }

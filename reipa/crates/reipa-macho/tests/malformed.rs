@@ -17,7 +17,9 @@ fn never_panics_on_truncation() {
         let _ = MachOImage::parse(&base[..len]);
     }
     for seed in 0u8..64 {
-        let junk: Vec<u8> = (0..256).map(|i| (i as u8).wrapping_mul(seed).wrapping_add(7)).collect();
+        let junk: Vec<u8> = (0..256)
+            .map(|i| (i as u8).wrapping_mul(seed).wrapping_add(7))
+            .collect();
         let _ = MachOImage::parse(&junk);
     }
 }

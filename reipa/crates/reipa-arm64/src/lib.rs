@@ -103,7 +103,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let target = addr.wrapping_add(imm as u64);
         let link = raw & 0x8000_0000 != 0;
         let mn = if link { "bl" } else { "b" };
-        let flow = if link { Flow::Call(target) } else { Flow::Branch(target) };
+        let flow = if link {
+            Flow::Call(target)
+        } else {
+            Flow::Branch(target)
+        };
         return mk(format!("{mn} 0x{target:x}"), flow);
     }
     if raw & 0xFF00_0010 == 0x5400_0000 {
@@ -154,10 +158,16 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         if op {
             let base = addr & !0xFFF;
             let target = base.wrapping_add((sext(imm, 21) << 12) as u64);
-            return mk(format!("adrp {}, 0x{target:x}", sx(rd, true)), Flow::Fallthrough);
+            return mk(
+                format!("adrp {}, 0x{target:x}", sx(rd, true)),
+                Flow::Fallthrough,
+            );
         } else {
             let target = addr.wrapping_add(sext(imm, 21) as u64);
-            return mk(format!("adr {}, 0x{target:x}", sx(rd, true)), Flow::Fallthrough);
+            return mk(
+                format!("adr {}, 0x{target:x}", sx(rd, true)),
+                Flow::Fallthrough,
+            );
         }
     }
 
@@ -168,17 +178,33 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let imm16 = (raw >> 5) & 0xFFFF;
         let rd = raw & 0x1f;
         let shift = hw * 16;
-        let lsl = if shift == 0 { String::new() } else { format!(", lsl #{shift}") };
+        let lsl = if shift == 0 {
+            String::new()
+        } else {
+            format!(", lsl #{shift}")
+        };
         return match opc {
-            0b00 => mk(format!("movn {}, #0x{imm16:x}{lsl}", sx(rd, sf)), Flow::Fallthrough),
+            0b00 => mk(
+                format!("movn {}, #0x{imm16:x}{lsl}", sx(rd, sf)),
+                Flow::Fallthrough,
+            ),
             0b10 => {
                 if shift == 0 {
-                    mk(format!("mov {}, #0x{imm16:x}", sx(rd, sf)), Flow::Fallthrough)
+                    mk(
+                        format!("mov {}, #0x{imm16:x}", sx(rd, sf)),
+                        Flow::Fallthrough,
+                    )
                 } else {
-                    mk(format!("movz {}, #0x{imm16:x}{lsl}", sx(rd, sf)), Flow::Fallthrough)
+                    mk(
+                        format!("movz {}, #0x{imm16:x}{lsl}", sx(rd, sf)),
+                        Flow::Fallthrough,
+                    )
                 }
             }
-            0b11 => mk(format!("movk {}, #0x{imm16:x}{lsl}", sx(rd, sf)), Flow::Fallthrough),
+            0b11 => mk(
+                format!("movk {}, #0x{imm16:x}{lsl}", sx(rd, sf)),
+                Flow::Fallthrough,
+            ),
             _ => unk(),
         };
     }
@@ -195,11 +221,17 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         if set && rd == 31 {
             let mn = if sub { "cmp" } else { "cmn" };
             let kind = if sub { FlagKind::Cmp } else { FlagKind::Cmn };
-            return mk(format!("{mn} {}, #0x{imm:x}", reg(rn, sf, true)), Flow::Fallthrough)
-                .with_flags(reg(rn, sf, true), format!("0x{imm:x}"), kind);
+            return mk(
+                format!("{mn} {}, #0x{imm:x}", reg(rn, sf, true)),
+                Flow::Fallthrough,
+            )
+            .with_flags(reg(rn, sf, true), format!("0x{imm:x}"), kind);
         }
         if !sub && !set && imm == 0 && (rd == 31 || rn == 31) {
-            return mk(format!("mov {}, {}", reg(rd, sf, true), reg(rn, sf, true)), Flow::Fallthrough);
+            return mk(
+                format!("mov {}, {}", reg(rd, sf, true), reg(rn, sf, true)),
+                Flow::Fallthrough,
+            );
         }
         let mn = match (sub, set) {
             (false, false) => "add",
@@ -208,7 +240,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (true, true) => "subs",
         };
         return mk(
-            format!("{mn} {}, {}, #0x{imm:x}", reg(rd, sf, !set), reg(rn, sf, true)),
+            format!(
+                "{mn} {}, {}, #0x{imm:x}",
+                reg(rd, sf, !set),
+                reg(rn, sf, true)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -223,7 +259,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let rd = raw & 0x1f;
         let shtype = (raw >> 22) & 0x3;
         if opc == 0b01 && !n && rn == 31 && imm6 == 0 {
-            return mk(format!("mov {}, {}", sx(rd, sf), sx(rm, sf)), Flow::Fallthrough);
+            return mk(
+                format!("mov {}, {}", sx(rd, sf), sx(rm, sf)),
+                Flow::Fallthrough,
+            );
         }
         let base = match opc {
             0b00 => "and",
@@ -232,13 +271,28 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             0b11 => "ands",
             _ => return unk(),
         };
-        let mn = if n { match opc {0b00=>"bic",0b01=>"orn",0b10=>"eon",_=>"bics"} } else { base };
+        let mn = if n {
+            match opc {
+                0b00 => "bic",
+                0b01 => "orn",
+                0b10 => "eon",
+                _ => "bics",
+            }
+        } else {
+            base
+        };
         if opc == 0b11 && !n && rd == 31 {
-            return mk(format!("tst {}, {}", sx(rn, sf), sx(rm, sf)), Flow::Fallthrough)
-                .with_flags(sx(rn, sf), sx(rm, sf), FlagKind::Tst);
+            return mk(
+                format!("tst {}, {}", sx(rn, sf), sx(rm, sf)),
+                Flow::Fallthrough,
+            )
+            .with_flags(sx(rn, sf), sx(rm, sf), FlagKind::Tst);
         }
         let sh = shift_str(shtype, imm6);
-        return mk(format!("{mn} {}, {}, {}{}", sx(rd, sf), sx(rn, sf), sx(rm, sf), sh), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}, {}{}", sx(rd, sf), sx(rn, sf), sx(rm, sf), sh),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x1F20_0000 == 0x0B00_0000 {
@@ -254,13 +308,21 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             let mn = if sub { "cmp" } else { "cmn" };
             let kind = if sub { FlagKind::Cmp } else { FlagKind::Cmn };
             let b = format!("{}{}", sx(rm, sf), shift_str(shtype, imm6));
-            return mk(format!("{mn} {}, {b}", sx(rn, sf)), Flow::Fallthrough)
-                .with_flags(sx(rn, sf), b, kind);
+            return mk(format!("{mn} {}, {b}", sx(rn, sf)), Flow::Fallthrough).with_flags(
+                sx(rn, sf),
+                b,
+                kind,
+            );
         }
         if sub && rn == 31 {
             let mn = if set { "negs" } else { "neg" };
             return mk(
-                format!("{mn} {}, {}{}", sx(rd, sf), sx(rm, sf), shift_str(shtype, imm6)),
+                format!(
+                    "{mn} {}, {}{}",
+                    sx(rd, sf),
+                    sx(rm, sf),
+                    shift_str(shtype, imm6)
+                ),
                 Flow::Fallthrough,
             );
         }
@@ -271,7 +333,13 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (true, true) => "subs",
         };
         return mk(
-            format!("{mn} {}, {}, {}{}", sx(rd, sf), sx(rn, sf), sx(rm, sf), shift_str(shtype, imm6)),
+            format!(
+                "{mn} {}, {}, {}{}",
+                sx(rd, sf),
+                sx(rn, sf),
+                sx(rm, sf),
+                shift_str(shtype, imm6)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -285,7 +353,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         if size == 3 && opc == 2 {
             let off = imm12 << 3;
             let base = reg(rn, true, true);
-            let mem = if off == 0 { format!("[{base}]") } else { format!("[{base}, #0x{off:x}]") };
+            let mem = if off == 0 {
+                format!("[{base}]")
+            } else {
+                format!("[{base}, #0x{off:x}]")
+            };
             return mk(format!("prfm #0x{rt:x}, {mem}"), Flow::Fallthrough);
         }
         let (mn, sf, scale) = match (size, opc) {
@@ -306,7 +378,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         };
         let off = imm12 << scale;
         let base = reg(rn, true, true);
-        let mem = if off == 0 { format!("[{base}]") } else { format!("[{base}, #0x{off:x}]") };
+        let mem = if off == 0 {
+            format!("[{base}]")
+        } else {
+            format!("[{base}, #0x{off:x}]")
+        };
         return mk(format!("{mn} {}, {mem}", sx(rt, sf)), Flow::Fallthrough);
     }
 
@@ -316,7 +392,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let imm = sext((raw >> 5) & 0x7FFFF, 19) << 2;
         let target = addr.wrapping_add(imm as u64);
         let rt = raw & 0x1f;
-        return mk(format!("ldr {}, 0x{target:x}", sx(rt, sf)), Flow::Fallthrough);
+        return mk(
+            format!("ldr {}, 0x{target:x}", sx(rt, sf)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x1FE0_0000 == 0x1A80_0000 {
@@ -363,7 +442,13 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             }
             let mn = if o0 { "msub" } else { "madd" };
             return mk(
-                format!("{mn} {}, {}, {}, {}", sx(rd, sf), sx(rn, sf), sx(rm, sf), sx(ra, sf)),
+                format!(
+                    "{mn} {}, {}, {}, {}",
+                    sx(rd, sf),
+                    sx(rn, sf),
+                    sx(rm, sf),
+                    sx(ra, sf)
+                ),
                 Flow::Fallthrough,
             );
         }
@@ -385,12 +470,23 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         if ra == 31 && (mn == "smaddl" || mn == "umaddl") {
             let alias = if mn == "smaddl" { "smull" } else { "umull" };
             return mk(
-                format!("{alias} {}, {}, {}", sx(rd, true), sx(rn, false), sx(rm, false)),
+                format!(
+                    "{alias} {}, {}, {}",
+                    sx(rd, true),
+                    sx(rn, false),
+                    sx(rm, false)
+                ),
                 Flow::Fallthrough,
             );
         }
         return mk(
-            format!("{mn} {}, {}, {}, {}", sx(rd, true), sx(rn, false), sx(rm, false), sx(ra, true)),
+            format!(
+                "{mn} {}, {}, {}, {}",
+                sx(rd, true),
+                sx(rn, false),
+                sx(rm, false),
+                sx(ra, true)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -427,35 +523,65 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         if opc == 0b10 {
             if imms != width - 1 && imms + 1 == immr {
                 let sh = width - immr;
-                return mk(format!("lsl {}, {}, #{sh}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+                return mk(
+                    format!("lsl {}, {}, #{sh}", sx(rd, sf), sx(rn, sf)),
+                    Flow::Fallthrough,
+                );
             }
             if imms == width - 1 {
-                return mk(format!("lsr {}, {}, #{immr}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+                return mk(
+                    format!("lsr {}, {}, #{immr}", sx(rd, sf), sx(rn, sf)),
+                    Flow::Fallthrough,
+                );
             }
             if immr == 0 && imms == 7 {
-                return mk(format!("uxtb {}, {}", sx(rd, false), sx(rn, false)), Flow::Fallthrough);
+                return mk(
+                    format!("uxtb {}, {}", sx(rd, false), sx(rn, false)),
+                    Flow::Fallthrough,
+                );
             }
             if immr == 0 && imms == 15 {
-                return mk(format!("uxth {}, {}", sx(rd, false), sx(rn, false)), Flow::Fallthrough);
+                return mk(
+                    format!("uxth {}, {}", sx(rd, false), sx(rn, false)),
+                    Flow::Fallthrough,
+                );
             }
             let w = imms.wrapping_sub(immr).wrapping_add(1);
-            return mk(format!("ubfx {}, {}, #{immr}, #{w}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+            return mk(
+                format!("ubfx {}, {}, #{immr}, #{w}", sx(rd, sf), sx(rn, sf)),
+                Flow::Fallthrough,
+            );
         }
         if opc == 0b00 {
             if imms == width - 1 {
-                return mk(format!("asr {}, {}, #{immr}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+                return mk(
+                    format!("asr {}, {}, #{immr}", sx(rd, sf), sx(rn, sf)),
+                    Flow::Fallthrough,
+                );
             }
             if immr == 0 && imms == 7 {
-                return mk(format!("sxtb {}, {}", sx(rd, sf), sx(rn, false)), Flow::Fallthrough);
+                return mk(
+                    format!("sxtb {}, {}", sx(rd, sf), sx(rn, false)),
+                    Flow::Fallthrough,
+                );
             }
             if immr == 0 && imms == 15 {
-                return mk(format!("sxth {}, {}", sx(rd, sf), sx(rn, false)), Flow::Fallthrough);
+                return mk(
+                    format!("sxth {}, {}", sx(rd, sf), sx(rn, false)),
+                    Flow::Fallthrough,
+                );
             }
             if immr == 0 && imms == 31 && sf {
-                return mk(format!("sxtw {}, {}", sx(rd, true), sx(rn, false)), Flow::Fallthrough);
+                return mk(
+                    format!("sxtw {}, {}", sx(rd, true), sx(rn, false)),
+                    Flow::Fallthrough,
+                );
             }
             let w = imms.wrapping_sub(immr).wrapping_add(1);
-            return mk(format!("sbfx {}, {}, #{immr}, #{w}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+            return mk(
+                format!("sbfx {}, {}, #{immr}, #{w}", sx(rd, sf), sx(rn, sf)),
+                Flow::Fallthrough,
+            );
         }
         return mk(
             format!("bfm {}, {}, #{immr}, #{imms}", sx(rd, sf), sx(rn, sf)),
@@ -537,7 +663,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         } else {
             format!("[{base}, #{}]", simm(off))
         };
-        return mk(format!("{mn} {}, {}, {mem}", sx(rt, sf), sx(rt2, sf)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}, {mem}", sx(rt, sf), sx(rt2, sf)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x1F80_0000 == 0x1200_0000 {
@@ -557,7 +686,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             None => return unk(),
         };
         if opc == 0b01 && rn == 31 {
-            return mk(format!("mov {}, #0x{imm:x}", reg(rd, sf, true)), Flow::Fallthrough);
+            return mk(
+                format!("mov {}, #0x{imm:x}", reg(rd, sf, true)),
+                Flow::Fallthrough,
+            );
         }
         if opc == 0b11 && rd == 31 {
             return mk(format!("tst {}, #0x{imm:x}", sx(rn, sf)), Flow::Fallthrough);
@@ -569,7 +701,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             _ => "ands",
         };
         let rd_s = reg(rd, sf, opc != 0b11);
-        return mk(format!("{mn} {rd_s}, {}, #0x{imm:x}", sx(rn, sf)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {rd_s}, {}, #0x{imm:x}", sx(rn, sf)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x1FE0_0000 == 0x0B20_0000 {
@@ -581,15 +716,24 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let imm3 = (raw >> 10) & 0x7;
         let rn = (raw >> 5) & 0x1f;
         let rd = raw & 0x1f;
-        let ext = ["uxtb", "uxth", "uxtw", "uxtx", "sxtb", "sxth", "sxtw", "sxtx"][option as usize];
+        let ext = [
+            "uxtb", "uxth", "uxtw", "uxtx", "sxtb", "sxth", "sxtw", "sxtx",
+        ][option as usize];
         let rm_x = option == 0b011 || option == 0b111;
-        let extstr = if imm3 == 0 { format!(", {ext}") } else { format!(", {ext} #{imm3}") };
+        let extstr = if imm3 == 0 {
+            format!(", {ext}")
+        } else {
+            format!(", {ext} #{imm3}")
+        };
         if set && rd == 31 {
             let mn = if sub { "cmp" } else { "cmn" };
             let kind = if sub { FlagKind::Cmp } else { FlagKind::Cmn };
             let b = format!("{}{extstr}", sx(rm, rm_x));
-            return mk(format!("{mn} {}, {b}", reg(rn, sf, true)), Flow::Fallthrough)
-                .with_flags(reg(rn, sf, true), b, kind);
+            return mk(
+                format!("{mn} {}, {b}", reg(rn, sf, true)),
+                Flow::Fallthrough,
+            )
+            .with_flags(reg(rn, sf, true), b, kind);
         }
         let mn = match (sub, set) {
             (false, false) => "add",
@@ -598,7 +742,12 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (true, true) => "subs",
         };
         return mk(
-            format!("{mn} {}, {}, {}{extstr}", reg(rd, sf, !set), reg(rn, sf, true), sx(rm, rm_x)),
+            format!(
+                "{mn} {}, {}, {}{extstr}",
+                reg(rd, sf, !set),
+                reg(rn, sf, true),
+                sx(rm, rm_x)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -618,7 +767,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             sx(rm_or_imm, sf)
         };
         return mk(
-            format!("{mn} {}, {b}, #0x{nzcv:x}, {}", sx(rn, sf), COND[cond as usize]),
+            format!(
+                "{mn} {}, {b}, #0x{nzcv:x}, {}",
+                sx(rn, sf),
+                COND[cond as usize]
+            ),
             Flow::Fallthrough,
         );
     }
@@ -643,7 +796,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             0b000101 => "cls",
             _ => return unk(),
         };
-        return mk(format!("{mn} {}, {}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}", sx(rd, sf), sx(rn, sf)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xFF00_0000 == 0xD400_0000 {
@@ -691,7 +847,12 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             };
             if l == 0 {
                 return mk(
-                    format!("{mn} {}, {}, {}, [{base}]", reg(rs, false, false), sx(rt, sf), sx(rt2, sf)),
+                    format!(
+                        "{mn} {}, {}, {}, [{base}]",
+                        reg(rs, false, false),
+                        sx(rt, sf),
+                        sx(rt2, sf)
+                    ),
                     Flow::Fallthrough,
                 );
             }
@@ -709,7 +870,7 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             };
             if l == 0 {
                 return mk(
-                    format!("{mn} {}, {}, [{base}]", reg(rs, false, false), sx(rt, sf), ),
+                    format!("{mn} {}, {}, [{base}]", reg(rs, false, false), sx(rt, sf),),
                     Flow::Fallthrough,
                 );
             }
@@ -735,7 +896,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let mn = if load { "ldr" } else { "str" };
         let off = imm12 << scale;
         let base = reg(rn, true, true);
-        let mem = if off == 0 { format!("[{base}]") } else { format!("[{base}, #0x{off:x}]") };
+        let mem = if off == 0 {
+            format!("[{base}]")
+        } else {
+            format!("[{base}, #0x{off:x}]")
+        };
         return mk(format!("{mn} {letter}{rt}, {mem}"), Flow::Fallthrough);
     }
 
@@ -785,8 +950,15 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let off = sext(imm7, 7) << scale;
         let mn = if load { "ldp" } else { "stp" };
         let base = reg(rn, true, true);
-        let mem = if off == 0 { format!("[{base}]") } else { format!("[{base}, #{}]", simm(off)) };
-        return mk(format!("{mn} {letter}{rt}, {letter}{rt2}, {mem}"), Flow::Fallthrough);
+        let mem = if off == 0 {
+            format!("[{base}]")
+        } else {
+            format!("[{base}, #{}]", simm(off))
+        };
+        return mk(
+            format!("{mn} {letter}{rt}, {letter}{rt2}, {mem}"),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xFF20_FC00 == 0x1E20_2000 {
@@ -798,9 +970,15 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let zero = opcode2 & 0x08 != 0;
         let mn = if e { "fcmpe" } else { "fcmp" };
         if zero {
-            return mk(format!("{mn} {}, #0.0", fp_reg(ftype, rn)), Flow::Fallthrough);
+            return mk(
+                format!("{mn} {}, #0.0", fp_reg(ftype, rn)),
+                Flow::Fallthrough,
+            );
         }
-        return mk(format!("{mn} {}, {}", fp_reg(ftype, rn), fp_reg(ftype, rm)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}", fp_reg(ftype, rn), fp_reg(ftype, rm)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xFF20_7C00 == 0x1E20_4000 {
@@ -823,7 +1001,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             0b001111 => "frinti",
             _ => return unk(),
         };
-        return mk(format!("{mn} {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xFF20_0C00 == 0x1E20_0800 {
@@ -845,7 +1026,12 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             _ => return unk(),
         };
         return mk(
-            format!("{mn} {}, {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn), fp_reg(ftype, rm)),
+            format!(
+                "{mn} {}, {}, {}",
+                fp_reg(ftype, rd),
+                fp_reg(ftype, rn),
+                fp_reg(ftype, rm)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -857,7 +1043,13 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let rn = (raw >> 5) & 0x1f;
         let rd = raw & 0x1f;
         return mk(
-            format!("fcsel {}, {}, {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn), fp_reg(ftype, rm), COND[cond as usize]),
+            format!(
+                "fcsel {}, {}, {}, {}",
+                fp_reg(ftype, rd),
+                fp_reg(ftype, rn),
+                fp_reg(ftype, rm),
+                COND[cond as usize]
+            ),
             Flow::Fallthrough,
         );
     }
@@ -871,7 +1063,12 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let nzcv = raw & 0xf;
         let mn = if e { "fccmpe" } else { "fccmp" };
         return mk(
-            format!("{mn} {}, {}, #0x{nzcv:x}, {}", fp_reg(ftype, rn), fp_reg(ftype, rm), COND[cond as usize]),
+            format!(
+                "{mn} {}, {}, #0x{nzcv:x}, {}",
+                fp_reg(ftype, rn),
+                fp_reg(ftype, rm),
+                COND[cond as usize]
+            ),
             Flow::Fallthrough,
         );
     }
@@ -881,7 +1078,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let imm8 = (raw >> 13) & 0xff;
         let rd = raw & 0x1f;
         let val = vfp_expand_imm(imm8);
-        return mk(format!("fmov {}, #{val:.8}", fp_reg(ftype, rd)), Flow::Fallthrough);
+        return mk(
+            format!("fmov {}, #{val:.8}", fp_reg(ftype, rd)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x7F20_FC00 == 0x1E20_0000 {
@@ -914,10 +1114,16 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             _ => (false, true),
         };
         if int_to_fp {
-            return mk(format!("{mn} {}, {}", fp_reg(ftype, rd), sx(rn, sf)), Flow::Fallthrough);
+            return mk(
+                format!("{mn} {}, {}", fp_reg(ftype, rd), sx(rn, sf)),
+                Flow::Fallthrough,
+            );
         }
         if fp_to_int {
-            return mk(format!("{mn} {}, {}", sx(rd, sf), fp_reg(ftype, rn)), Flow::Fallthrough);
+            return mk(
+                format!("{mn} {}, {}", sx(rd, sf), fp_reg(ftype, rn)),
+                Flow::Fallthrough,
+            );
         }
         return unk();
     }
@@ -937,7 +1143,13 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             _ => "fnmsub",
         };
         return mk(
-            format!("{mn} {}, {}, {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn), fp_reg(ftype, rm), fp_reg(ftype, ra)),
+            format!(
+                "{mn} {}, {}, {}, {}",
+                fp_reg(ftype, rd),
+                fp_reg(ftype, rn),
+                fp_reg(ftype, rm),
+                fp_reg(ftype, ra)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -949,10 +1161,18 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let rn = (raw >> 5) & 0x1f;
         let rd = raw & 0x1f;
         if rn == rm {
-            return mk(format!("ror {}, {}, #0x{imms:x}", sx(rd, sf), sx(rn, sf)), Flow::Fallthrough);
+            return mk(
+                format!("ror {}, {}, #0x{imms:x}", sx(rd, sf), sx(rn, sf)),
+                Flow::Fallthrough,
+            );
         }
         return mk(
-            format!("extr {}, {}, {}, #0x{imms:x}", sx(rd, sf), sx(rn, sf), sx(rm, sf)),
+            format!(
+                "extr {}, {}, {}, #0x{imms:x}",
+                sx(rd, sf),
+                sx(rn, sf),
+                sx(rm, sf)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -966,7 +1186,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let rd = raw & 0x1f;
         if sub && rn == 31 {
             let mn = if set { "ngcs" } else { "ngc" };
-            return mk(format!("{mn} {}, {}", sx(rd, sf), sx(rm, sf)), Flow::Fallthrough);
+            return mk(
+                format!("{mn} {}, {}", sx(rd, sf), sx(rm, sf)),
+                Flow::Fallthrough,
+            );
         }
         let mn = match (sub, set) {
             (false, false) => "adc",
@@ -1094,7 +1317,11 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (1, 0x1f) => "fdiv",
             _ => return unk(),
         };
-        let arr = if opcode >= 0x18 { farr(hi, q) } else { varr(size, q) };
+        let arr = if opcode >= 0x18 {
+            farr(hi, q)
+        } else {
+            varr(size, q)
+        };
         return mk(
             format!("{mn} v{rd}.{arr}, v{rn}.{arr}, v{rm}.{arr}"),
             Flow::Fallthrough,
@@ -1111,19 +1338,37 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let size = imm5.trailing_zeros().min(3);
         let arr = varr(size, q);
         if op == 1 {
-            return mk(format!("mov v{rd}.{arr}[?], v{rn}.{arr}[?]"), Flow::Fallthrough);
+            return mk(
+                format!("mov v{rd}.{arr}[?], v{rn}.{arr}[?]"),
+                Flow::Fallthrough,
+            );
         }
         return match imm4 {
-            0b0000 => mk(format!("dup v{rd}.{arr}, v{rn}.{arr}[?]"), Flow::Fallthrough),
+            0b0000 => mk(
+                format!("dup v{rd}.{arr}, v{rn}.{arr}[?]"),
+                Flow::Fallthrough,
+            ),
             0b0001 => {
                 let gp = size == 3;
-                mk(format!("dup v{rd}.{arr}, {}", sx(rn, gp)), Flow::Fallthrough)
+                mk(
+                    format!("dup v{rd}.{arr}, {}", sx(rn, gp)),
+                    Flow::Fallthrough,
+                )
             }
-            0b0011 => mk(format!("mov v{rd}.{arr}[?], {}", sx(rn, size == 3)), Flow::Fallthrough),
-            0b0101 => mk(format!("smov {}, v{rn}.{arr}[?]", sx(rd, q == 1)), Flow::Fallthrough),
+            0b0011 => mk(
+                format!("mov v{rd}.{arr}[?], {}", sx(rn, size == 3)),
+                Flow::Fallthrough,
+            ),
+            0b0101 => mk(
+                format!("smov {}, v{rn}.{arr}[?]", sx(rd, q == 1)),
+                Flow::Fallthrough,
+            ),
             0b0111 => {
                 let mn = if size >= 2 { "mov" } else { "umov" };
-                mk(format!("{mn} {}, v{rn}.{arr}[?]", sx(rd, q == 1)), Flow::Fallthrough)
+                mk(
+                    format!("{mn} {}, v{rn}.{arr}[?]", sx(rd, q == 1)),
+                    Flow::Fallthrough,
+                )
             }
             _ => unk(),
         };
@@ -1146,7 +1391,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             _ => return unk(),
         };
         let a = varr(size, q);
-        return mk(format!("{mn} v{rd}.{a}, v{rn}.{a}, v{rm}.{a}"), Flow::Fallthrough);
+        return mk(
+            format!("{mn} v{rd}.{a}, v{rn}.{a}, v{rm}.{a}"),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xBF20_9C00 == 0x0E00_0000 {
@@ -1157,7 +1405,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let rd = raw & 0x1f;
         let mn = if op == 1 { "tbx" } else { "tbl" };
         let a = varr(0, q);
-        return mk(format!("{mn} v{rd}.{a}, {{v{rn}.16b}}, v{rm}.{a}"), Flow::Fallthrough);
+        return mk(
+            format!("{mn} v{rd}.{a}, {{v{rn}.16b}}, v{rm}.{a}"),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x9F3E_0C00 == 0x0E30_0800 {
@@ -1180,7 +1431,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (1, 0x2c) => "fminnmv",
             _ => return unk(),
         };
-        return mk(format!("{mn} v{rd}, v{rn}.{}", varr(size, q)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} v{rd}, v{rn}.{}", varr(size, q)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x9F3E_0C00 == 0x0E20_0800 {
@@ -1310,7 +1564,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let is_cmp0 = (0x08..=0x0a).contains(&opcode) || (0x0c..=0x0e).contains(&opcode);
         if is_cmp0 {
             let zero = if opcode >= 0x0c { ", #0.0" } else { ", #0" };
-            return mk(format!("{mn} v{rd}.{arr}, v{rn}.{arr}{zero}"), Flow::Fallthrough);
+            return mk(
+                format!("{mn} v{rd}.{arr}, v{rn}.{arr}{zero}"),
+                Flow::Fallthrough,
+            );
         }
         return mk(format!("{mn} v{rd}.{arr}, v{rn}.{arr}"), Flow::Fallthrough);
     }
@@ -1417,7 +1674,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let two = if q == 1 { "2" } else { "" };
         let da = varr(size + 1, 1);
         let sa = varr(size, q);
-        return mk(format!("{mn}{two} v{rd}.{da}, v{rn}.{sa}, v{rm}.{sa}"), Flow::Fallthrough);
+        return mk(
+            format!("{mn}{two} v{rd}.{da}, v{rn}.{sa}, v{rm}.{sa}"),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0x9F00_0400 == 0x0F00_0000 {
@@ -1511,7 +1771,12 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         };
         let _ = size;
         return mk(
-            format!("{mn} {}, {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn), fp_reg(ftype, rm)),
+            format!(
+                "{mn} {}, {}, {}",
+                fp_reg(ftype, rd),
+                fp_reg(ftype, rn),
+                fp_reg(ftype, rm)
+            ),
             Flow::Fallthrough,
         );
     }
@@ -1574,7 +1839,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             (1, 0x1f) => "fsqrt",
             _ => return unk(),
         };
-        return mk(format!("{mn} {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn)), Flow::Fallthrough);
+        return mk(
+            format!("{mn} {}, {}", fp_reg(ftype, rd), fp_reg(ftype, rn)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xDFE0_8400 == 0x5E00_0400 {
@@ -1588,7 +1856,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
             2 => 0,
             _ => 1,
         };
-        return mk(format!("mov {}, v{rn}.?[?]", fp_reg(ft, rd)), Flow::Fallthrough);
+        return mk(
+            format!("mov {}, v{rn}.?[?]", fp_reg(ft, rd)),
+            Flow::Fallthrough,
+        );
     }
 
     if raw & 0xDF00_0400 == 0x5F00_0000 {
@@ -1736,7 +2007,10 @@ pub fn decode(raw: u32, addr: u64) -> Insn {
         let two = q == 1 && matches!(opcode, 0x14 | 0x10 | 0x12);
         let suf = if two { "2" } else { "" };
         let a = varr(size, q);
-        return mk(format!("{mn}{suf} v{rd}.{a}, v{rn}.{a}, #?"), Flow::Fallthrough);
+        return mk(
+            format!("{mn}{suf} v{rd}.{a}, v{rn}.{a}, #?"),
+            Flow::Fallthrough,
+        );
     }
 
     unk()
@@ -1830,7 +2104,11 @@ fn decode_bitmask(n: u32, imms: u32, immr: u32, datasize: u32) -> Option<u64> {
     }
     let s1 = s + 1;
     let welem: u64 = if s1 >= 64 { u64::MAX } else { (1u64 << s1) - 1 };
-    let emask: u64 = if esize >= 64 { u64::MAX } else { (1u64 << esize) - 1 };
+    let emask: u64 = if esize >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << esize) - 1
+    };
     let rot = r % esize;
     let elem = if rot == 0 {
         welem & emask

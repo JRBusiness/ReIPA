@@ -24,7 +24,10 @@ const KIND_ENUM: u32 = 18;
 const MAX_PARENT_DEPTH: usize = 24;
 
 fn kind_has_name(kind: u32) -> bool {
-    matches!(kind, KIND_MODULE | KIND_PROTOCOL | KIND_CLASS | KIND_STRUCT | KIND_ENUM)
+    matches!(
+        kind,
+        KIND_MODULE | KIND_PROTOCOL | KIND_CLASS | KIND_STRUCT | KIND_ENUM
+    )
 }
 
 fn u32_at(d: &[u8], off: usize) -> Option<u32> {
@@ -128,8 +131,10 @@ mod tests {
         let ds = 32 + cmdsize;
 
         let mut d = vec![0u8; 0x40];
-        let put_i32 = |d: &mut [u8], at: usize, v: i32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
-        let put_u32 = |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        let put_i32 =
+            |d: &mut [u8], at: usize, v: i32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        let put_u32 =
+            |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
 
         put_i32(&mut d, 0x00, 8);
         put_u32(&mut d, 0x08, KIND_STRUCT);
@@ -143,18 +148,23 @@ mod tests {
 
         fn sect(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__TEXT".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__TEXT".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
             s.extend_from_slice(&size.to_le_bytes());
             s.extend_from_slice(&offset.to_le_bytes());
-            for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+            for _ in 0..7 {
+                s.extend_from_slice(&0u32.to_le_bytes());
+            }
             s
         }
         let mut seg = Vec::new();
-        let mut segn = b"__TEXT".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__TEXT".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&(ds as u64).to_le_bytes());
         seg.extend_from_slice(&0x1000u64.to_le_bytes());

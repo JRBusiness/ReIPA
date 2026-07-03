@@ -48,15 +48,20 @@ enum Command {
 fn read_input(path: &PathBuf) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     if bytes.starts_with(b"PK\x03\x04") {
-        return Err("input looks like a .ipa (zip); reipa operates on a raw Mach-O \
+        return Err(
+            "input looks like a .ipa (zip); reipa operates on a raw Mach-O \
                     executable. Extract Payload/<App>.app/<Executable> from the .ipa first."
-            .to_string());
+                .to_string(),
+        );
     }
     Ok(bytes)
 }
 
 fn uuid_string(uuid: &[u8; 16]) -> String {
-    uuid.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join("")
+    uuid.iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn dm(name: &str) -> String {
@@ -85,13 +90,12 @@ fn run() -> Result<(), String> {
         Command::Verify { path } => {
             let bytes = read_input(&path)?;
             let img = Image::load(&bytes).map_err(|e| e.to_string())?;
-            let arch = if img.macho.cpusubtype & 0x00ff_ffff
-                == reipa_macho::consts::CPU_SUBTYPE_ARM64E
-            {
-                "arm64e"
-            } else {
-                "arm64"
-            };
+            let arch =
+                if img.macho.cpusubtype & 0x00ff_ffff == reipa_macho::consts::CPU_SUBTYPE_ARM64E {
+                    "arm64e"
+                } else {
+                    "arm64"
+                };
             println!("arch:       {arch}");
             println!("filetype:   0x{:x}", img.macho.filetype);
             println!("segments:   {}", img.macho.segments.len());
@@ -117,8 +121,13 @@ fn run() -> Result<(), String> {
             }
             println!("segments:   {}", img.macho.segments.len());
             for s in &img.macho.segments {
-                println!("  {} vm=0x{:x} size=0x{:x} sections={}",
-                    s.segname, s.vmaddr, s.vmsize, s.sections.len());
+                println!(
+                    "  {} vm=0x{:x} size=0x{:x} sections={}",
+                    s.segname,
+                    s.vmaddr,
+                    s.vmsize,
+                    s.sections.len()
+                );
             }
             println!("symbols:    {}", img.macho.symbols.len());
             println!("strings:    {}", img.strings.len());
@@ -212,11 +221,16 @@ fn run() -> Result<(), String> {
                 println!("@end\n");
             }
 
-            let categories = reipa_objc::parse_objc_categories(&bytes).map_err(|e| e.to_string())?;
+            let categories =
+                reipa_objc::parse_objc_categories(&bytes).map_err(|e| e.to_string())?;
             if !categories.is_empty() {
                 println!("// {} categories\n", categories.len());
                 for cat in &categories {
-                    let cls = cat.class_name.as_deref().map(dm).unwrap_or_else(|| "?".to_string());
+                    let cls = cat
+                        .class_name
+                        .as_deref()
+                        .map(dm)
+                        .unwrap_or_else(|| "?".to_string());
                     let protos = if cat.protocols.is_empty() {
                         String::new()
                     } else {
@@ -238,7 +252,8 @@ fn run() -> Result<(), String> {
         Command::SwiftTypes { path } => {
             use reipa_swift::metadata::SwiftKind;
             let bytes = read_input(&path)?;
-            let types = reipa_swift::metadata::parse_swift_types(&bytes).map_err(|e| e.to_string())?;
+            let types =
+                reipa_swift::metadata::parse_swift_types(&bytes).map_err(|e| e.to_string())?;
             println!("// {} Swift types", types.len());
             for t in &types {
                 let kw = match t.kind {
@@ -255,8 +270,7 @@ fn run() -> Result<(), String> {
             use std::io::Write;
             let bytes = read_input(&path)?;
             let macho = reipa_macho::MachOImage::parse(&bytes).map_err(|e| e.to_string())?;
-            let slice =
-                reipa_macho::fat::select_arm64_slice(&bytes).map_err(|e| e.to_string())?;
+            let slice = reipa_macho::fat::select_arm64_slice(&bytes).map_err(|e| e.to_string())?;
             let sdata = slice.data;
             match addr {
                 Some(addr) => {
@@ -317,8 +331,7 @@ fn run() -> Result<(), String> {
         Command::Decompile { path, addr, count } => {
             let bytes = read_input(&path)?;
             let macho = reipa_macho::MachOImage::parse(&bytes).map_err(|e| e.to_string())?;
-            let slice =
-                reipa_macho::fat::select_arm64_slice(&bytes).map_err(|e| e.to_string())?;
+            let slice = reipa_macho::fat::select_arm64_slice(&bytes).map_err(|e| e.to_string())?;
             let sdata = slice.data;
             let start = parse_addr(&addr)?;
 
@@ -358,8 +371,11 @@ fn run() -> Result<(), String> {
                 .unwrap_or_else(|| format!("sub_{start:x}"));
             let blocks = reipa_arm64::cfg::build_blocks(&insns);
             let rblocks: Vec<RBlock> = blocks.iter().map(|b| render_block(b, &names)).collect();
-            let by_addr: std::collections::HashMap<u64, usize> =
-                rblocks.iter().enumerate().map(|(i, rb)| (rb.start, i)).collect();
+            let by_addr: std::collections::HashMap<u64, usize> = rblocks
+                .iter()
+                .enumerate()
+                .map(|(i, rb)| (rb.start, i))
+                .collect();
             let order: Vec<u64> = rblocks.iter().map(|rb| rb.start).collect();
             println!(
                 "// {fname}  @0x{start:x}  ({} blocks, {} instructions)",
@@ -371,7 +387,16 @@ fn run() -> Result<(), String> {
             }
             println!("{fname}() {{");
             let mut out = Vec::new();
-            structure_emit(&rblocks, &by_addr, &order, 0, order.len(), u64::MAX, 1, &mut out);
+            structure_emit(
+                &rblocks,
+                &by_addr,
+                &order,
+                0,
+                order.len(),
+                u64::MAX,
+                1,
+                &mut out,
+            );
             for line in out {
                 println!("{line}");
             }
@@ -389,7 +414,11 @@ fn is_reg_tok(s: &str) -> bool {
 }
 
 fn is_hex_const(s: &str) -> bool {
-    s.strip_prefix("0x").is_some_and(|h| !h.is_empty() && h.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)))
+    s.strip_prefix("0x").is_some_and(|h| {
+        !h.is_empty()
+            && h.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+    })
 }
 
 fn fold_arith(expr: &str) -> String {
@@ -451,7 +480,14 @@ fn propagate(stmts: &[String]) -> Vec<String> {
         }
         let body = s.strip_suffix(';').unwrap_or(s);
         let sub = subst_consts(body, &env);
-        rendered.push((None, if s.ends_with(';') { format!("{sub};") } else { sub }));
+        rendered.push((
+            None,
+            if s.ends_with(';') {
+                format!("{sub};")
+            } else {
+                sub
+            },
+        ));
     }
     let regs_of = |s: &str| -> Vec<String> {
         s.split(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -512,7 +548,10 @@ enum Term {
     Fall,
 }
 
-fn render_block(b: &reipa_arm64::cfg::Block, names: &std::collections::HashMap<u64, String>) -> RBlock {
+fn render_block(
+    b: &reipa_arm64::cfg::Block,
+    names: &std::collections::HashMap<u64, String>,
+) -> RBlock {
     use reipa_arm64::Flow;
     let mut stmts = Vec::new();
     let mut last_flags: Option<&reipa_arm64::FlagOp> = None;
@@ -520,7 +559,10 @@ fn render_block(b: &reipa_arm64::cfg::Block, names: &std::collections::HashMap<u
     for ins in &b.insns {
         match &ins.flow {
             Flow::Call(t) => {
-                let n = names.get(t).cloned().unwrap_or_else(|| format!("sub_{t:x}"));
+                let n = names
+                    .get(t)
+                    .cloned()
+                    .unwrap_or_else(|| format!("sub_{t:x}"));
                 stmts.push(format!("{n}();"));
             }
             Flow::IndirectCall => stmts.push(pseudo(ins)),
@@ -543,7 +585,12 @@ fn render_block(b: &reipa_arm64::cfg::Block, names: &std::collections::HashMap<u
             }
         }
     }
-    RBlock { start: b.start, stmts: propagate(&stmts), term, succ: b.succ.clone() }
+    RBlock {
+        start: b.start,
+        stmts: propagate(&stmts),
+        term,
+        succ: b.succ.clone(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -580,7 +627,11 @@ fn structure_emit(
         }
         let block = &rb[by[&order[i]]];
         if is_jump_target(rb, order[i]) {
-            out.push(format!("{}L_{:x}:", "    ".repeat(ind.saturating_sub(1)), order[i]));
+            out.push(format!(
+                "{}L_{:x}:",
+                "    ".repeat(ind.saturating_sub(1)),
+                order[i]
+            ));
         }
         for s in &block.stmts {
             out.push(format!("{pad}{s}"));
@@ -630,7 +681,9 @@ fn structure_emit(
 }
 
 fn is_invertible(c: &str) -> bool {
-    [" == ", " != ", " <= ", " >= ", " < ", " > "].iter().any(|op| c.contains(op))
+    [" == ", " != ", " <= ", " >= ", " < ", " > "]
+        .iter()
+        .any(|op| c.contains(op))
 }
 
 fn invert_cond(c: &str) -> String {
@@ -657,8 +710,14 @@ fn is_jump_target(rb: &[RBlock], addr: u64) -> bool {
 }
 
 enum IfPlan {
-    Simple { tidx: usize },
-    Else { tidx: usize, midx: usize, merge: u64 },
+    Simple {
+        tidx: usize,
+    },
+    Else {
+        tidx: usize,
+        midx: usize,
+        merge: u64,
+    },
 }
 
 fn detect_do_while(
@@ -673,7 +732,9 @@ fn detect_do_while(
         if let Term::If { cond, taken } = &rb[by[&order[e]]].term {
             if *taken == header {
                 let exit = *order.get(e + 1)?;
-                if by.contains_key(&exit) && loop_ok(rb, by, order, i, e, exit) && is_invertible(cond)
+                if by.contains_key(&exit)
+                    && loop_ok(rb, by, order, i, e, exit)
+                    && is_invertible(cond)
                 {
                     return Some((e, cond.clone(), exit));
                 }
@@ -827,7 +888,10 @@ fn resolve_cond(code: u8, flags: Option<&reipa_arm64::FlagOp>) -> String {
             match code {
                 0 => format!("{inner} == 0"),
                 1 => format!("{inner} != 0"),
-                _ => format!("cond_{} /* {inner} */", CC.get(code as usize).unwrap_or(&"?")),
+                _ => format!(
+                    "cond_{} /* {inner} */",
+                    CC.get(code as usize).unwrap_or(&"?")
+                ),
             }
         }
     }
@@ -870,7 +934,8 @@ fn build_names(bytes: &[u8]) -> (NameMap, NameMap) {
             None => format!("{sign}[{cls} {sel}]"),
         };
         names.entry(imp).or_insert(disp);
-        sigs.entry(imp).or_insert(format!("{sign} {}", render_method(sel, types)));
+        sigs.entry(imp)
+            .or_insert(format!("{sign} {}", render_method(sel, types)));
     };
     if let Ok(classes) = reipa_objc::parse_objc_classes(bytes) {
         for c in &classes {
@@ -885,7 +950,11 @@ fn build_names(bytes: &[u8]) -> (NameMap, NameMap) {
     }
     if let Ok(cats) = reipa_objc::parse_objc_categories(bytes) {
         for cat in &cats {
-            let cls = cat.class_name.as_deref().map(dm).unwrap_or_else(|| "?".to_string());
+            let cls = cat
+                .class_name
+                .as_deref()
+                .map(dm)
+                .unwrap_or_else(|| "?".to_string());
             for m in &cat.instance_methods {
                 add(m.imp, '-', &cls, Some(&cat.name), &m.name, &m.types);
             }
@@ -919,7 +988,12 @@ fn pseudo(ins: &reipa_arm64::Insn) -> String {
     let noh = |s: &str| s.trim_start_matches('#').to_string();
     let binop = |sym: &str| -> Option<String> {
         if ops.len() >= 3 {
-            Some(format!("{} = {} {sym} {};", ops[0], noh(ops[1]), noh(&ops[2..].join(", "))))
+            Some(format!(
+                "{} = {} {sym} {};",
+                ops[0],
+                noh(ops[1]),
+                noh(&ops[2..].join(", "))
+            ))
         } else {
             None
         }
@@ -1019,8 +1093,24 @@ mod tests {
     #[test]
     fn if_else_recovered_without_fallthrough() {
         let blocks = vec![
-            rb(0x00, &[], Term::If { cond: "a == 0".into(), taken: 0x40 }, &[0x40, 0x10]),
-            rb(0x10, &[], Term::If { cond: "b == 0".into(), taken: 0x30 }, &[0x30, 0x20]),
+            rb(
+                0x00,
+                &[],
+                Term::If {
+                    cond: "a == 0".into(),
+                    taken: 0x40,
+                },
+                &[0x40, 0x10],
+            ),
+            rb(
+                0x10,
+                &[],
+                Term::If {
+                    cond: "b == 0".into(),
+                    taken: 0x30,
+                },
+                &[0x30, 0x20],
+            ),
             rb(0x20, &["r = 1;"], Term::Goto(0x40), &[0x40]),
             rb(0x30, &["r = 2;"], Term::Fall, &[0x40]),
             rb(0x40, &["x0 = r;"], Term::Ret, &[]),
@@ -1036,14 +1126,25 @@ mod tests {
         let pe = text.find("} else {").expect("else missing");
         let p2 = text.find("r = 2;").expect("r=2 missing");
         assert!(p1 < pe && pe < p2, "then/else out of order:\n{text}");
-        assert!(!text.contains("r = 1;\n        r = 2;"), "then fell into else:\n{text}");
+        assert!(
+            !text.contains("r = 1;\n        r = 2;"),
+            "then fell into else:\n{text}"
+        );
     }
 
     #[test]
     fn do_while_loop_recovered() {
         let blocks = vec![
             rb(0x00, &["i = 0;"], Term::Fall, &[0x10]),
-            rb(0x10, &["sum += i;", "i++;"], Term::If { cond: "i < 10".into(), taken: 0x10 }, &[0x10, 0x20]),
+            rb(
+                0x10,
+                &["sum += i;", "i++;"],
+                Term::If {
+                    cond: "i < 10".into(),
+                    taken: 0x10,
+                },
+                &[0x10, 0x20],
+            ),
             rb(0x20, &["x0 = sum;"], Term::Ret, &[]),
         ];
         let order: Vec<u64> = blocks.iter().map(|b| b.start).collect();
@@ -1052,18 +1153,32 @@ mod tests {
         structure_emit(&blocks, &by, &order, 0, order.len(), u64::MAX, 1, &mut out);
         let text = out.join("\n");
         assert!(text.contains("do {"), "no do-while:\n{text}");
-        assert!(text.contains("} while (i < 10);"), "wrong loop cond:\n{text}");
+        assert!(
+            text.contains("} while (i < 10);"),
+            "wrong loop cond:\n{text}"
+        );
         let dopos = text.find("do {").unwrap();
         let whpos = text.find("} while").unwrap();
         let bodypos = text.find("sum += i;").unwrap();
         let exitpos = text.find("x0 = sum;").unwrap();
-        assert!(dopos < bodypos && bodypos < whpos && whpos < exitpos, "loop layout wrong:\n{text}");
+        assert!(
+            dopos < bodypos && bodypos < whpos && whpos < exitpos,
+            "loop layout wrong:\n{text}"
+        );
     }
 
     #[test]
     fn while_loop_recovered() {
         let blocks = vec![
-            rb(0x00, &[], Term::If { cond: "i >= 10".into(), taken: 0x30 }, &[0x30, 0x10]),
+            rb(
+                0x00,
+                &[],
+                Term::If {
+                    cond: "i >= 10".into(),
+                    taken: 0x30,
+                },
+                &[0x30, 0x10],
+            ),
             rb(0x10, &["sum += i;", "i++;"], Term::Goto(0x00), &[0x00]),
             rb(0x30, &["x0 = sum;"], Term::Ret, &[]),
         ];
@@ -1077,7 +1192,10 @@ mod tests {
         let wpos = text.find("while (i < 10)").unwrap();
         let bodypos = text.find("sum += i;").unwrap();
         let exitpos = text.find("x0 = sum;").unwrap();
-        assert!(wpos < bodypos && bodypos < exitpos, "while layout wrong:\n{text}");
+        assert!(
+            wpos < bodypos && bodypos < exitpos,
+            "while layout wrong:\n{text}"
+        );
     }
 
     #[test]

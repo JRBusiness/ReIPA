@@ -125,14 +125,18 @@ fn objc_macho() -> Vec<u8> {
     let methtype = b"v16@0:8\0";
     fn sect_bytes(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
         let mut s = Vec::new();
-        let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-        let mut sg = b"__TEXT".to_vec(); sg.resize(16, 0);
+        let mut sn = name.as_bytes().to_vec();
+        sn.resize(16, 0);
+        let mut sg = b"__TEXT".to_vec();
+        sg.resize(16, 0);
         s.extend_from_slice(&sn);
         s.extend_from_slice(&sg);
         s.extend_from_slice(&addr.to_le_bytes());
         s.extend_from_slice(&size.to_le_bytes());
         s.extend_from_slice(&offset.to_le_bytes());
-        for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+        for _ in 0..7 {
+            s.extend_from_slice(&0u32.to_le_bytes());
+        }
         s
     }
     let nsects = 3u32;
@@ -143,7 +147,8 @@ fn objc_macho() -> Vec<u8> {
     let off_classname = off_methname + methname.len() as u32;
     let off_methtype = off_classname + classname.len() as u32;
     let mut seg = Vec::new();
-    let mut segn = b"__TEXT".to_vec(); segn.resize(16, 0);
+    let mut segn = b"__TEXT".to_vec();
+    segn.resize(16, 0);
     seg.extend_from_slice(&segn);
     seg.extend_from_slice(&0x1000u64.to_le_bytes());
     seg.extend_from_slice(&0x4000u64.to_le_bytes());
@@ -153,9 +158,24 @@ fn objc_macho() -> Vec<u8> {
     seg.extend_from_slice(&5u32.to_le_bytes());
     seg.extend_from_slice(&nsects.to_le_bytes());
     seg.extend_from_slice(&0u32.to_le_bytes());
-    seg.extend_from_slice(&sect_bytes("__objc_methname", 0x2000, methname.len() as u64, off_methname));
-    seg.extend_from_slice(&sect_bytes("__objc_classname", 0x3000, classname.len() as u64, off_classname));
-    seg.extend_from_slice(&sect_bytes("__objc_methtype", 0x3100, methtype.len() as u64, off_methtype));
+    seg.extend_from_slice(&sect_bytes(
+        "__objc_methname",
+        0x2000,
+        methname.len() as u64,
+        off_methname,
+    ));
+    seg.extend_from_slice(&sect_bytes(
+        "__objc_classname",
+        0x3000,
+        classname.len() as u64,
+        off_classname,
+    ));
+    seg.extend_from_slice(&sect_bytes(
+        "__objc_methtype",
+        0x3100,
+        methtype.len() as u64,
+        off_methtype,
+    ));
     let mut v = Vec::new();
     v.extend_from_slice(&MH_MAGIC_64.to_le_bytes());
     v.extend_from_slice(&CPU_TYPE_ARM64.to_le_bytes());
@@ -180,7 +200,10 @@ fn objc_lists_selectors_and_classnames() {
     let path = std::path::Path::new(dir).join("reipa_test_objc.macho");
     std::fs::write(&path, objc_macho()).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_reipa"))
-        .arg("objc").arg(&path).output().unwrap();
+        .arg("objc")
+        .arg(&path)
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("selectors:    2"), "got: {stdout}");

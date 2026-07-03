@@ -67,7 +67,9 @@ pub fn parse_chained_fixups(
             Some(o) => o,
             None => continue,
         };
-        walk_segment(blob, file, start, seg_idx, segments, base, &imports, &mut out);
+        walk_segment(
+            blob, file, start, seg_idx, segments, base, &imports, &mut out,
+        );
     }
     out
 }

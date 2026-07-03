@@ -32,7 +32,10 @@ struct Opened {
 
 enum Msg {
     Opened(Result<Opened, String>),
-    Done { which: Which, result: Result<String, String> },
+    Done {
+        which: Which,
+        result: Result<String, String>,
+    },
     Chat(Result<String, String>),
 }
 
@@ -280,7 +283,10 @@ impl App {
                 self.strings = Some(match result {
                     Ok(t) => t
                         .lines()
-                        .filter_map(|l| l.split_once(' ').map(|(a, s)| (a.to_string(), s.to_string())))
+                        .filter_map(|l| {
+                            l.split_once(' ')
+                                .map(|(a, s)| (a.to_string(), s.to_string()))
+                        })
                         .collect(),
                     Err(e) => vec![("".into(), e)],
                 });
@@ -467,32 +473,39 @@ impl App {
                     .filter(|(_, (n, _))| needle.is_empty() || n.to_lowercase().contains(&needle))
                     .map(|(i, _)| i)
                     .collect();
-                ui.label(egui::RichText::new(format!("{} classes", idx.len())).weak().small());
+                ui.label(
+                    egui::RichText::new(format!("{} classes", idx.len()))
+                        .weak()
+                        .small(),
+                );
                 let row_h = ui.text_style_height(&egui::TextStyle::Body);
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(
-                    ui,
-                    row_h,
-                    idx.len(),
-                    |ui, range| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show_rows(ui, row_h, idx.len(), |ui, range| {
                         for &vi in &idx[range] {
                             let selected = self.class_sel == Some(vi);
                             if ui.selectable_label(selected, &data[vi].0).clicked() {
                                 self.class_sel = Some(vi);
                             }
                         }
-                    },
-                );
+                    });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            let Some(body) = self.class_sel.and_then(|i| data.get(i)).map(|(_, b)| b.clone()) else {
+            let Some(body) = self
+                .class_sel
+                .and_then(|i| data.get(i))
+                .map(|(_, b)| b.clone())
+            else {
                 ui.centered_and_justified(|ui| {
                     ui.label(egui::RichText::new("Select a class").weak());
                 });
                 return;
             };
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                self.class_body_view(ui, ctx, &body);
-            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    self.class_body_view(ui, ctx, &body);
+                });
         });
 
         self.classes = classes;
@@ -503,12 +516,20 @@ impl App {
         for line in body.lines() {
             if let Some(addr) = imp_of(line) {
                 ui.horizontal(|ui| {
-                    if ui.small_button("▶").on_hover_text("Decompile this method").clicked() {
+                    if ui
+                        .small_button("▶")
+                        .on_hover_text("Decompile this method")
+                        .clicked()
+                    {
                         self.decomp_addr = addr.clone();
                         self.decomp_out = None;
                         self.decomp_loading = true;
                         self.tab = Tab::Decompile;
-                        self.dispatch(ctx, Which::Decompile, vec!["decompile".into(), addr.clone()]);
+                        self.dispatch(
+                            ctx,
+                            Which::Decompile,
+                            vec!["decompile".into(), addr.clone()],
+                        );
                     }
                     ui.add(egui::Label::new(highlight(line, def)).selectable(true));
                 });
@@ -544,21 +565,22 @@ impl App {
                     .filter(|(_, s)| needle.is_empty() || s.to_lowercase().contains(&needle))
                     .map(|(i, _)| i)
                     .collect();
-                ui.label(egui::RichText::new(format!("{} types", idx.len())).weak().small());
+                ui.label(
+                    egui::RichText::new(format!("{} types", idx.len()))
+                        .weak()
+                        .small(),
+                );
                 let row_h = ui.text_style_height(&egui::TextStyle::Body);
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(
-                    ui,
-                    row_h,
-                    idx.len(),
-                    |ui, range| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show_rows(ui, row_h, idx.len(), |ui, range| {
                         for &vi in &idx[range] {
                             let selected = self.swift_sel == Some(vi);
                             if ui.selectable_label(selected, &data[vi]).clicked() {
                                 self.swift_sel = Some(vi);
                             }
                         }
-                    },
-                );
+                    });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -580,9 +602,13 @@ impl App {
                     .size(14.0),
             );
             ui.separator();
-            let body = cdata.iter().find(|(n, _)| n == tyname).map(|(_, b)| b.clone());
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                match body {
+            let body = cdata
+                .iter()
+                .find(|(n, _)| n == tyname)
+                .map(|(_, b)| b.clone());
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match body {
                     Some(b) => self.class_body_view(ui, ctx, &b),
                     None if self.classes_loading => {
                         ui.horizontal(|ui| {
@@ -601,8 +627,7 @@ impl App {
                             .weak(),
                         );
                     }
-                }
-            });
+                });
         });
 
         self.swift = items;
@@ -629,13 +654,15 @@ impl App {
                 .filter(|(_, (_, s))| needle.is_empty() || s.to_lowercase().contains(&needle))
                 .map(|(i, _)| i)
                 .collect();
-            ui.label(egui::RichText::new(format!("{} strings", idx.len())).weak().small());
+            ui.label(
+                egui::RichText::new(format!("{} strings", idx.len()))
+                    .weak()
+                    .small(),
+            );
             let row_h = ui.text_style_height(&egui::TextStyle::Monospace);
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(
-                ui,
-                row_h,
-                idx.len(),
-                |ui, range| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_rows(ui, row_h, idx.len(), |ui, range| {
                     for &vi in &idx[range] {
                         let (addr, s) = &data[vi];
                         ui.add(
@@ -645,8 +672,7 @@ impl App {
                             .selectable(true),
                         );
                     }
-                },
-            );
+                });
         });
         self.strings = items;
     }
@@ -738,34 +764,36 @@ impl App {
                 ui.checkbox(&mut self.chat_context, "Send current view as context");
                 ui.separator();
 
-                egui::TopBottomPanel::bottom("chat_input").resizable(false).show_inside(ui, |ui| {
-                    ui.add_space(4.0);
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.chat_input)
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY)
-                            .hint_text("Ask about this binary…  (Ctrl+Enter to send)"),
-                    );
-                    let ctrl_enter = ui.input(|i| {
-                        i.modifiers.command && i.key_pressed(egui::Key::Enter)
+                egui::TopBottomPanel::bottom("chat_input")
+                    .resizable(false)
+                    .show_inside(ui, |ui| {
+                        ui.add_space(4.0);
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.chat_input)
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY)
+                                .hint_text("Ask about this binary…  (Ctrl+Enter to send)"),
+                        );
+                        let ctrl_enter =
+                            ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
+                        ui.horizontal(|ui| {
+                            let can_send = !self.chat_running && !self.chat_input.trim().is_empty();
+                            let clicked = ui
+                                .add_enabled(can_send, egui::Button::new("Send"))
+                                .clicked();
+                            if self.chat_running {
+                                ui.spinner();
+                                ui.label("thinking…");
+                            }
+                            if ui.button("Clear").clicked() {
+                                self.chat_msgs.clear();
+                            }
+                            if (clicked || ctrl_enter) && can_send {
+                                self.send_chat(ctx);
+                            }
+                        });
+                        ui.add_space(4.0);
                     });
-                    ui.horizontal(|ui| {
-                        let can_send = !self.chat_running && !self.chat_input.trim().is_empty();
-                        let clicked =
-                            ui.add_enabled(can_send, egui::Button::new("Send")).clicked();
-                        if self.chat_running {
-                            ui.spinner();
-                            ui.label("thinking…");
-                        }
-                        if ui.button("Clear").clicked() {
-                            self.chat_msgs.clear();
-                        }
-                        if (clicked || ctrl_enter) && can_send {
-                            self.send_chat(ctx);
-                        }
-                    });
-                    ui.add_space(4.0);
-                });
 
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -804,14 +832,19 @@ impl App {
             return;
         }
         self.chat_input.clear();
-        self.chat_msgs.push(ChatMsg { role: Role::User, text: msg.clone() });
+        self.chat_msgs.push(ChatMsg {
+            role: Role::User,
+            text: msg.clone(),
+        });
         self.chat_running = true;
         let prompt = self.build_prompt(&msg);
         let backend = self.backend;
+        let binary = self.binary.clone();
+        let reipa_exe = self.reipa_exe.clone();
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let r = run_assistant(backend, &prompt);
+            let r = run_assistant(backend, &prompt, binary.as_deref(), &reipa_exe);
             let _ = tx.send(Msg::Chat(r));
             ctx.request_repaint();
         });
@@ -824,6 +857,9 @@ impl App {
         );
         if !self.label.is_empty() {
             p.push_str(&format!("Binary: {}\n", self.label));
+        }
+        if let Some(bin) = &self.binary {
+            p.push_str(&reipa_api_prompt(bin));
         }
         if self.chat_context {
             if let Some(view) = self.current_context() {
@@ -852,9 +888,14 @@ impl App {
     fn current_context(&self) -> Option<String> {
         match self.tab {
             Tab::Decompile => self.decomp_out.clone(),
-            Tab::Disasm if !self.disasm_lines.is_empty() => {
-                Some(self.disasm_lines.iter().take(400).cloned().collect::<Vec<_>>().join("\n"))
-            }
+            Tab::Disasm if !self.disasm_lines.is_empty() => Some(
+                self.disasm_lines
+                    .iter()
+                    .take(400)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
             Tab::Info => self.info.clone(),
             Tab::Classes => {
                 let i = self.class_sel?;
@@ -865,20 +906,98 @@ impl App {
     }
 }
 
-fn run_assistant(backend: Backend, prompt: &str) -> Result<String, String> {
-    let (prog, args): (&str, &[&str]) = match backend {
-        Backend::Claude => ("claude", &["-p"]),
-        Backend::Codex => ("codex", &["exec"]),
+fn reipa_api_prompt(binary: &Path) -> String {
+    format!(
+        "You can inspect this binary yourself by running the `reipa` command-line tool \
+         (already on your PATH) through your shell. The binary under analysis is:\n  {bin}\n\
+         Run these to gather facts before answering; prefer real output over guessing. \
+         Use that path as <bin> (quote it):\n\
+         - reipa info <bin>            header, segments, UUID, symbol/string counts\n\
+         - reipa verify <bin>          encryption / FairPlay status\n\
+         - reipa classdump <bin>       Objective-C @interface dump; methods note their address as 0x...\n\
+         - reipa swift-types <bin>     Swift classes, structs, enums\n\
+         - reipa symbols <bin>         symbols with addresses\n\
+         - reipa strings <bin>         __cstring strings with addresses\n\
+         - reipa objc <bin>            Objective-C selector / class-name / method-type pools\n\
+         - reipa disasm <bin> <addr> [--count N]     arm64 disassembly from a virtual address\n\
+         - reipa decompile <bin> <addr> [--count N]  pseudocode for the function at an address\n\
+         Find addresses for disasm/decompile from classdump or symbols. Only run `reipa` commands.\n\n",
+        bin = binary.display()
+    )
+}
+
+fn prepend_path(dir: &Path) -> Option<std::ffi::OsString> {
+    let existing = std::env::var_os("PATH")?;
+    let mut dirs = vec![dir.to_path_buf()];
+    dirs.extend(std::env::split_paths(&existing));
+    std::env::join_paths(dirs).ok()
+}
+
+#[cfg(windows)]
+fn allow_reipa_tool(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.raw_arg("--allowedTools \"Bash(reipa:*)\"");
+}
+#[cfg(not(windows))]
+fn allow_reipa_tool(cmd: &mut std::process::Command) {
+    cmd.args(["--allowedTools", "Bash(reipa:*)"]);
+}
+
+fn run_assistant(
+    backend: Backend,
+    prompt: &str,
+    binary: Option<&Path>,
+    reipa_exe: &Path,
+) -> Result<String, String> {
+    let prog = match backend {
+        Backend::Claude => "claude",
+        Backend::Codex => "codex",
     };
     let dir = std::env::temp_dir().join("reipa-gui");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let tmp = dir.join("prompt.txt");
     std::fs::write(&tmp, prompt).map_err(|e| e.to_string())?;
     let infile = std::fs::File::open(&tmp).map_err(|e| e.to_string())?;
+    let last_msg = dir.join("codex_last.txt");
+    let codex_tools = backend == Backend::Codex && binary.is_some();
+    if codex_tools {
+        let _ = std::fs::remove_file(&last_msg);
+    }
 
     let mut cmd = base_cmd(prog);
-    cmd.args(args)
-        .stdin(Stdio::from(infile))
+    match backend {
+        Backend::Claude => {
+            cmd.arg("-p");
+            if binary.is_some() {
+                allow_reipa_tool(&mut cmd);
+            }
+        }
+        Backend::Codex => {
+            cmd.arg("exec");
+            if binary.is_some() {
+                cmd.arg("--dangerously-bypass-approvals-and-sandbox")
+                    .arg("--skip-git-repo-check")
+                    .arg("-o")
+                    .arg(&last_msg);
+            }
+        }
+    }
+
+    if let Some(bin) = binary {
+        if let Some(bdir) = bin.parent() {
+            cmd.current_dir(bdir);
+            if backend == Backend::Codex {
+                cmd.arg("-C").arg(bdir);
+            }
+        }
+        if let Some(rdir) = reipa_exe.parent() {
+            if let Some(newpath) = prepend_path(rdir) {
+                cmd.env("PATH", newpath);
+            }
+        }
+    }
+
+    cmd.stdin(Stdio::from(infile))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     no_window(&mut cmd);
@@ -886,8 +1005,19 @@ fn run_assistant(backend: Backend, prompt: &str) -> Result<String, String> {
         format!("cannot launch '{prog}': {e}. Is the {prog} CLI installed and on PATH?")
     })?;
     if out.status.success() {
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        Ok(if s.is_empty() { "(no output)".into() } else { s })
+        let s = if codex_tools {
+            std::fs::read_to_string(&last_msg)
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        } else {
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        Ok(if s.is_empty() {
+            "(no output)".into()
+        } else {
+            s
+        })
     } else {
         let err = String::from_utf8_lossy(&out.stderr);
         let msg = err.trim();
@@ -930,24 +1060,23 @@ fn no_window(cmd: &mut std::process::Command) {
 fn output_pane(ui: &mut egui::Ui, text: Option<&str>) {
     let text = text.unwrap_or("");
     let def = ui.visuals().text_color();
-    egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-        ui.add(egui::Label::new(highlight(text, def)).selectable(true));
-    });
+    egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add(egui::Label::new(highlight(text, def)).selectable(true));
+        });
 }
 
 fn lines_pane(ui: &mut egui::Ui, lines: &[String]) {
     let def = ui.visuals().text_color();
     let row_h = ui.fonts(|f| f.row_height(&egui::FontId::monospace(12.0)));
-    egui::ScrollArea::both().auto_shrink([false, false]).show_rows(
-        ui,
-        row_h,
-        lines.len(),
-        |ui, range| {
+    egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show_rows(ui, row_h, lines.len(), |ui, range| {
             for i in range {
                 ui.add(egui::Label::new(highlight(&lines[i], def)).selectable(true));
             }
-        },
-    );
+        });
 }
 
 const C_COMMENT: egui::Color32 = egui::Color32::from_rgb(120, 140, 120);
@@ -1002,7 +1131,11 @@ fn highlight(text: &str, def: egui::Color32) -> egui::text::LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = f32::INFINITY;
     let font = egui::FontId::monospace(12.0);
-    let fmt = |c: egui::Color32| TextFormat { font_id: font.clone(), color: c, ..Default::default() };
+    let fmt = |c: egui::Color32| TextFormat {
+        font_id: font.clone(),
+        color: c,
+        ..Default::default()
+    };
 
     for (li, line) in text.split('\n').enumerate() {
         if li > 0 {
@@ -1142,7 +1275,11 @@ fn open_binary(path: &Path) -> Result<Opened, String> {
     } else {
         Ok(Opened {
             path: path.to_path_buf(),
-            label: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            label: path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
         })
     }
 }
@@ -1187,9 +1324,15 @@ fn extract_ipa(ipa: &Path) -> Result<PathBuf, String> {
 }
 
 fn window_icon() -> Option<egui::IconData> {
-    let img = image::load_from_memory(include_bytes!("../reipa.ico")).ok()?.to_rgba8();
+    let img = image::load_from_memory(include_bytes!("../reipa.ico"))
+        .ok()?
+        .to_rgba8();
     let (width, height) = img.dimensions();
-    Some(egui::IconData { rgba: img.into_raw(), width, height })
+    Some(egui::IconData {
+        rgba: img.into_raw(),
+        width,
+        height,
+    })
 }
 
 fn main() -> eframe::Result<()> {
@@ -1199,6 +1342,9 @@ fn main() -> eframe::Result<()> {
     if let Some(icon) = window_icon() {
         viewport = viewport.with_icon(icon);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
     eframe::run_native("ReIPA", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
 }

@@ -18,8 +18,16 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let dump = args.iter().position(|a| a == "--dump").and_then(|i| args.get(i + 1)).cloned();
-    let emit = args.iter().position(|a| a == "--emit").and_then(|i| args.get(i + 1)).cloned();
+    let dump = args
+        .iter()
+        .position(|a| a == "--dump")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let emit = args
+        .iter()
+        .position(|a| a == "--emit")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
 
     let code = match mode {
         "throughput" => throughput(&path, dump.as_deref(), emit.as_deref()),
@@ -65,7 +73,10 @@ fn throughput(path: &str, dump: Option<&str>, emit: Option<&str>) -> i32 {
     let size = text.size as usize;
     let end = off.saturating_add(size).min(sdata.len());
     if off >= end {
-        eprintln!("__text out of range (off={off} size={size} slice={})", sdata.len());
+        eprintln!(
+            "__text out of range (off={off} size={size} slice={})",
+            sdata.len()
+        );
         return 1;
     }
     let code = &sdata[off..end];

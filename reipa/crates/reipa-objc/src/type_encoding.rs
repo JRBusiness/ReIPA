@@ -20,7 +20,11 @@ pub fn method_signature(selector: &str, encoding: &str) -> String {
             None => break,
         }
     }
-    let params: Vec<String> = if args.len() >= 2 { args[2..].to_vec() } else { Vec::new() };
+    let params: Vec<String> = if args.len() >= 2 {
+        args[2..].to_vec()
+    } else {
+        Vec::new()
+    };
 
     let colon_count = selector.matches(':').count();
     if colon_count == 0 {
@@ -43,7 +47,10 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
-        Parser { b: s.as_bytes(), i: 0 }
+        Parser {
+            b: s.as_bytes(),
+            i: 0,
+        }
     }
 
     fn peek(&self) -> Option<u8> {
@@ -156,7 +163,9 @@ impl<'a> Parser<'a> {
             b'?' => self.take("void *"),
             b'^' => {
                 self.i += 1;
-                let inner = self.parse_type_d(depth + 1).unwrap_or_else(|| "void".to_string());
+                let inner = self
+                    .parse_type_d(depth + 1)
+                    .unwrap_or_else(|| "void".to_string());
                 format!("{} *", inner)
             }
             b'{' => {
@@ -185,7 +194,11 @@ impl<'a> Parser<'a> {
                 (c as char).to_string()
             }
         };
-        Some(if is_const { format!("const {}", ty) } else { ty })
+        Some(if is_const {
+            format!("const {}", ty)
+        } else {
+            ty
+        })
     }
 
     fn take(&mut self, s: &str) -> String {
@@ -240,8 +253,14 @@ mod tests {
 
     #[test]
     fn no_arg_method() {
-        assert_eq!(method_signature("startUpdating", "v16@0:8"), "(void)startUpdating");
-        assert_eq!(method_signature("isRecording", "B16@0:8"), "(BOOL)isRecording");
+        assert_eq!(
+            method_signature("startUpdating", "v16@0:8"),
+            "(void)startUpdating"
+        );
+        assert_eq!(
+            method_signature("isRecording", "B16@0:8"),
+            "(BOOL)isRecording"
+        );
     }
 
     #[test]

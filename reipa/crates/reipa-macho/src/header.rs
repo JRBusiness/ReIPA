@@ -32,7 +32,13 @@ pub fn parse_header(slice: &Slice) -> Result<MachHeader> {
     let _sizeofcmds = r.read_u32()?;
     let flags = r.read_u32()?;
     let _reserved = r.read_u32()?;
-    Ok(MachHeader { cputype, cpusubtype, filetype, ncmds, flags })
+    Ok(MachHeader {
+        cputype,
+        cpusubtype,
+        filetype,
+        ncmds,
+        flags,
+    })
 }
 
 pub fn load_commands<'a>(slice: &'a Slice) -> Result<Vec<LoadCommand<'a>>> {
@@ -84,7 +90,11 @@ mod tests {
     #[test]
     fn parses_header_fields() {
         let bytes = slice_with(&[]);
-        let s = Slice { cputype: CPU_TYPE_ARM64, cpusubtype: 0, data: &bytes };
+        let s = Slice {
+            cputype: CPU_TYPE_ARM64,
+            cpusubtype: 0,
+            data: &bytes,
+        };
         let h = parse_header(&s).unwrap();
         assert_eq!(h.cputype, CPU_TYPE_ARM64);
         assert_eq!(h.filetype, 2);
@@ -94,7 +104,11 @@ mod tests {
     #[test]
     fn iterates_load_commands() {
         let bytes = slice_with(&[(LC_UUID, vec![0xaa; 16]), (LC_SYMTAB, vec![0xbb; 16])]);
-        let s = Slice { cputype: CPU_TYPE_ARM64, cpusubtype: 0, data: &bytes };
+        let s = Slice {
+            cputype: CPU_TYPE_ARM64,
+            cpusubtype: 0,
+            data: &bytes,
+        };
         let cmds = load_commands(&s).unwrap();
         assert_eq!(cmds.len(), 2);
         assert_eq!(cmds[0].cmd, LC_UUID);
@@ -106,7 +120,11 @@ mod tests {
     fn truncated_load_command_errors() {
         let mut bytes = slice_with(&[(LC_UUID, vec![0xaa; 16])]);
         bytes.truncate(bytes.len() - 4);
-        let s = Slice { cputype: CPU_TYPE_ARM64, cpusubtype: 0, data: &bytes };
+        let s = Slice {
+            cputype: CPU_TYPE_ARM64,
+            cpusubtype: 0,
+            data: &bytes,
+        };
         assert!(load_commands(&s).is_err());
     }
 
@@ -121,7 +139,11 @@ mod tests {
         v.extend_from_slice(&0x1000u32.to_le_bytes());
         v.extend_from_slice(&0u32.to_le_bytes());
         v.extend_from_slice(&0u32.to_le_bytes());
-        let s = Slice { cputype: CPU_TYPE_ARM64, cpusubtype: 0, data: &v };
+        let s = Slice {
+            cputype: CPU_TYPE_ARM64,
+            cpusubtype: 0,
+            data: &v,
+        };
         assert!(load_commands(&s).is_err());
     }
 }

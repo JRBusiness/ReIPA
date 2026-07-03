@@ -1,13 +1,13 @@
-pub mod reader;
+pub mod chained_fixups;
 pub mod consts;
+pub mod dyld_info;
 pub mod fat;
 pub mod header;
-pub mod symtab;
-pub mod segment;
-pub mod chained_fixups;
-pub mod dyld_info;
-pub mod linkedit;
 pub mod image;
+pub mod linkedit;
+pub mod reader;
+pub mod segment;
+pub mod symtab;
 
 pub use image::MachOImage;
 

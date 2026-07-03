@@ -2,7 +2,11 @@ pub mod metadata;
 
 pub fn demangle(sym: &str) -> String {
     if let Some(rest) = sym.strip_prefix("_Tt") {
-        let mut p = Demangler { b: rest.as_bytes(), i: 0, depth: 0 };
+        let mut p = Demangler {
+            b: rest.as_bytes(),
+            i: 0,
+            depth: 0,
+        };
         if let Some(s) = p.parse_type() {
             if p.i == p.b.len() {
                 return s;
@@ -20,7 +24,11 @@ pub fn demangle(sym: &str) -> String {
 }
 
 fn demangle_modern(rest: &str) -> Option<String> {
-    let mut p = Demangler { b: rest.as_bytes(), i: 0, depth: 0 };
+    let mut p = Demangler {
+        b: rest.as_bytes(),
+        i: 0,
+        depth: 0,
+    };
     let module = p.parse_identifier()?;
     let mut path = vec![module];
     while let Some(id) = p.parse_identifier() {
@@ -108,7 +116,10 @@ impl<'a> Demangler<'a> {
         if self.i == start {
             return None;
         }
-        let len: usize = core::str::from_utf8(&self.b[start..self.i]).ok()?.parse().ok()?;
+        let len: usize = core::str::from_utf8(&self.b[start..self.i])
+            .ok()?
+            .parse()
+            .ok()?;
         if len == 0 {
             return None;
         }
@@ -166,7 +177,10 @@ mod tests {
     #[test]
     fn simple_class() {
         assert_eq!(demangle("_TtC6TWorld11Application"), "TWorld.Application");
-        assert_eq!(demangle("_TtC10ADPService14ADPServiceImpl"), "ADPService.ADPServiceImpl");
+        assert_eq!(
+            demangle("_TtC10ADPService14ADPServiceImpl"),
+            "ADPService.ADPServiceImpl"
+        );
     }
 
     #[test]
@@ -204,7 +218,10 @@ mod tests {
 
     #[test]
     fn modern_mangling_nominal_path() {
-        assert_eq!(demangle("_$s10Foundation10CocoaErrorV4CodeVMa"), "Foundation.CocoaError.Code");
+        assert_eq!(
+            demangle("_$s10Foundation10CocoaErrorV4CodeVMa"),
+            "Foundation.CocoaError.Code"
+        );
         assert_eq!(
             demangle("_$s10Foundation10URLRequestV10httpMethodSSSgvg"),
             "Foundation.URLRequest.httpMethod"

@@ -15,7 +15,11 @@ pub struct ObjcStrings {
 
 impl ObjcStrings {
     fn empty() -> ObjcStrings {
-        ObjcStrings { selectors: Vec::new(), class_names: Vec::new(), method_types: Vec::new() }
+        ObjcStrings {
+            selectors: Vec::new(),
+            class_names: Vec::new(),
+            method_types: Vec::new(),
+        }
     }
 }
 
@@ -138,7 +142,11 @@ impl Resolver {
 
     fn bind_class_name(&self, field_vm: u64) -> Option<String> {
         let sym = self.binds.get(&field_vm)?;
-        Some(sym.strip_prefix("_OBJC_CLASS_$_").unwrap_or(sym).to_string())
+        Some(
+            sym.strip_prefix("_OBJC_CLASS_$_")
+                .unwrap_or(sym)
+                .to_string(),
+        )
     }
 }
 
@@ -186,14 +194,24 @@ fn read_method_list(r: &Resolver, m: &MachOImage, d: &[u8], list_vm: u64) -> Vec
                 .map(|off| rel(e_vm.wrapping_add(8), off as i32))
                 .unwrap_or(0);
             if let Some(name) = name {
-                out.push(ObjcMethod { name, types: types.unwrap_or_default(), imp });
+                out.push(ObjcMethod {
+                    name,
+                    types: types.unwrap_or_default(),
+                    imp,
+                });
             }
         } else {
             let name = r.follow(m, d, e_vm).and_then(|p| cstr_vm(m, d, p));
-            let types = r.follow(m, d, e_vm.wrapping_add(8)).and_then(|p| cstr_vm(m, d, p));
+            let types = r
+                .follow(m, d, e_vm.wrapping_add(8))
+                .and_then(|p| cstr_vm(m, d, p));
             let imp = r.follow(m, d, e_vm.wrapping_add(16)).unwrap_or(0);
             if let Some(name) = name {
-                out.push(ObjcMethod { name, types: types.unwrap_or_default(), imp });
+                out.push(ObjcMethod {
+                    name,
+                    types: types.unwrap_or_default(),
+                    imp,
+                });
             }
         }
     }
@@ -236,7 +254,11 @@ fn read_ivar_list(r: &Resolver, m: &MachOImage, d: &[u8], list_vm: u64) -> Vec<O
             .follow(m, d, iv_vm.wrapping_add(16))
             .and_then(|p| cstr_vm(m, d, p))
             .unwrap_or_default();
-        out.push(ObjcIvar { name, type_enc, offset });
+        out.push(ObjcIvar {
+            name,
+            type_enc,
+            offset,
+        });
     }
     out
 }
@@ -272,7 +294,9 @@ fn read_protocol_list(r: &Resolver, m: &MachOImage, d: &[u8], list_vm: u64) -> V
     let avail = d.len().saturating_sub(list_off + 8);
     let count = count.min(avail / 8);
     for i in 0..count {
-        let proto_field_vm = list_vm.wrapping_add(8).wrapping_add((i as u64).wrapping_mul(8));
+        let proto_field_vm = list_vm
+            .wrapping_add(8)
+            .wrapping_add((i as u64).wrapping_mul(8));
         let proto_vm = match r.follow(m, d, proto_field_vm) {
             Some(v) => v,
             None => continue,
@@ -309,7 +333,11 @@ pub fn parse_objc_classes(buf: &[u8]) -> reipa_macho::Result<Vec<ObjcClass>> {
             Some(v) => v,
             None => continue,
         };
-        let ro_vm = match resolver.follow(&macho, sdata, class_vm.wrapping_add(OBJC_CLASS_BITS_OFF as u64)) {
+        let ro_vm = match resolver.follow(
+            &macho,
+            sdata,
+            class_vm.wrapping_add(OBJC_CLASS_BITS_OFF as u64),
+        ) {
             Some(bits) => bits & FAST_DATA_MASK,
             None => continue,
         };
@@ -327,7 +355,11 @@ pub fn parse_objc_classes(buf: &[u8]) -> reipa_macho::Result<Vec<ObjcClass>> {
             None => resolver.bind_class_name(super_field),
         };
         let methods_vm = resolver
-            .follow(&macho, sdata, ro_vm.wrapping_add(CLASS_RO_METHODS_OFF as u64))
+            .follow(
+                &macho,
+                sdata,
+                ro_vm.wrapping_add(CLASS_RO_METHODS_OFF as u64),
+            )
             .unwrap_or(0);
         let instance_methods = read_method_list(&resolver, &macho, sdata, methods_vm);
         let class_methods = read_class_methods(&resolver, &macho, sdata, class_vm);
@@ -336,7 +368,11 @@ pub fn parse_objc_classes(buf: &[u8]) -> reipa_macho::Result<Vec<ObjcClass>> {
             .unwrap_or(0);
         let ivars = read_ivar_list(&resolver, &macho, sdata, ivars_vm);
         let protos_vm = resolver
-            .follow(&macho, sdata, ro_vm.wrapping_add(CLASS_RO_PROTOCOLS_OFF as u64))
+            .follow(
+                &macho,
+                sdata,
+                ro_vm.wrapping_add(CLASS_RO_PROTOCOLS_OFF as u64),
+            )
             .unwrap_or(0);
         let protocols = read_protocol_list(&resolver, &macho, sdata, protos_vm);
 
@@ -388,19 +424,37 @@ pub fn parse_objc_categories(buf: &[u8]) -> reipa_macho::Result<Vec<ObjcCategory
             None => resolver.bind_class_name(cls_field),
         };
         let inst_vm = resolver
-            .follow(&macho, sdata, cat_vm.wrapping_add(CATEGORY_INST_METHODS_OFF as u64))
+            .follow(
+                &macho,
+                sdata,
+                cat_vm.wrapping_add(CATEGORY_INST_METHODS_OFF as u64),
+            )
             .unwrap_or(0);
         let instance_methods = read_method_list(&resolver, &macho, sdata, inst_vm);
         let cls_vm = resolver
-            .follow(&macho, sdata, cat_vm.wrapping_add(CATEGORY_CLASS_METHODS_OFF as u64))
+            .follow(
+                &macho,
+                sdata,
+                cat_vm.wrapping_add(CATEGORY_CLASS_METHODS_OFF as u64),
+            )
             .unwrap_or(0);
         let class_methods = read_method_list(&resolver, &macho, sdata, cls_vm);
         let protos_vm = resolver
-            .follow(&macho, sdata, cat_vm.wrapping_add(CATEGORY_PROTOCOLS_OFF as u64))
+            .follow(
+                &macho,
+                sdata,
+                cat_vm.wrapping_add(CATEGORY_PROTOCOLS_OFF as u64),
+            )
             .unwrap_or(0);
         let protocols = read_protocol_list(&resolver, &macho, sdata, protos_vm);
 
-        out.push(ObjcCategory { name, class_name, instance_methods, class_methods, protocols });
+        out.push(ObjcCategory {
+            name,
+            class_name,
+            instance_methods,
+            class_methods,
+            protocols,
+        });
     }
     Ok(out)
 }
@@ -417,8 +471,10 @@ mod tests {
 
         fn sect_bytes(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__TEXT".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__TEXT".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
@@ -444,7 +500,8 @@ mod tests {
         let off_methtype = off_classname + classname.len() as u32;
 
         let mut seg = Vec::new();
-        let mut segn = b"__TEXT".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__TEXT".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
         seg.extend_from_slice(&0x4000u64.to_le_bytes());
@@ -454,9 +511,24 @@ mod tests {
         seg.extend_from_slice(&5u32.to_le_bytes());
         seg.extend_from_slice(&nsects.to_le_bytes());
         seg.extend_from_slice(&0u32.to_le_bytes());
-        seg.extend_from_slice(&sect_bytes("__objc_methname", 0x2000, methname.len() as u64, off_methname));
-        seg.extend_from_slice(&sect_bytes("__objc_classname", 0x3000, classname.len() as u64, off_classname));
-        seg.extend_from_slice(&sect_bytes("__objc_methtype", 0x3100, methtype.len() as u64, off_methtype));
+        seg.extend_from_slice(&sect_bytes(
+            "__objc_methname",
+            0x2000,
+            methname.len() as u64,
+            off_methname,
+        ));
+        seg.extend_from_slice(&sect_bytes(
+            "__objc_classname",
+            0x3000,
+            classname.len() as u64,
+            off_classname,
+        ));
+        seg.extend_from_slice(&sect_bytes(
+            "__objc_methtype",
+            0x3100,
+            methtype.len() as u64,
+            off_methtype,
+        ));
 
         let mut v = Vec::new();
         v.extend_from_slice(&MH_MAGIC_64.to_le_bytes());
@@ -507,19 +579,24 @@ mod tests {
 
         fn sect(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__DATA".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__DATA".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
             s.extend_from_slice(&size.to_le_bytes());
             s.extend_from_slice(&offset.to_le_bytes());
-            for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+            for _ in 0..7 {
+                s.extend_from_slice(&0u32.to_le_bytes());
+            }
             s
         }
 
         let mut seg = Vec::new();
-        let mut segn = b"__DATA".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__DATA".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&(ds as u64).to_le_bytes());
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
@@ -570,8 +647,10 @@ mod tests {
 
         let a = |local: usize| (ds + local) as u64;
         let mut d = vec![0u8; 0xCD];
-        let put64 = |d: &mut [u8], at: usize, v: u64| d[at..at + 8].copy_from_slice(&v.to_le_bytes());
-        let put32 = |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        let put64 =
+            |d: &mut [u8], at: usize, v: u64| d[at..at + 8].copy_from_slice(&v.to_le_bytes());
+        let put32 =
+            |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
 
         put64(&mut d, 0x00, a(0x08));
         put64(&mut d, 0x28, a(0x30));
@@ -600,18 +679,23 @@ mod tests {
 
         fn sect(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__DATA".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__DATA".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
             s.extend_from_slice(&size.to_le_bytes());
             s.extend_from_slice(&offset.to_le_bytes());
-            for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+            for _ in 0..7 {
+                s.extend_from_slice(&0u32.to_le_bytes());
+            }
             s
         }
         let mut seg = Vec::new();
-        let mut segn = b"__DATA".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__DATA".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&(ds as u64).to_le_bytes());
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
@@ -665,19 +749,24 @@ mod tests {
 
         fn sect(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__DATA".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__DATA".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
             s.extend_from_slice(&size.to_le_bytes());
             s.extend_from_slice(&offset.to_le_bytes());
-            for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+            for _ in 0..7 {
+                s.extend_from_slice(&0u32.to_le_bytes());
+            }
             s
         }
 
         let mut seg = Vec::new();
-        let mut segn = b"__DATA".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__DATA".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&(ds as u64).to_le_bytes());
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
@@ -687,7 +776,12 @@ mod tests {
         seg.extend_from_slice(&3u32.to_le_bytes());
         seg.extend_from_slice(&nsects.to_le_bytes());
         seg.extend_from_slice(&0u32.to_le_bytes());
-        seg.extend_from_slice(&sect("__objc_classlist", ds as u64, 0xFFFF_FFFF_FFFF_FFF8, ds as u32));
+        seg.extend_from_slice(&sect(
+            "__objc_classlist",
+            ds as u64,
+            0xFFFF_FFFF_FFFF_FFF8,
+            ds as u32,
+        ));
 
         let mut v = Vec::new();
         v.extend_from_slice(&MH_MAGIC_64.to_le_bytes());
@@ -785,18 +879,23 @@ mod tests {
 
         fn sect(name: &str, addr: u64, size: u64, offset: u32) -> Vec<u8> {
             let mut s = Vec::new();
-            let mut sn = name.as_bytes().to_vec(); sn.resize(16, 0);
-            let mut sg = b"__DATA".to_vec(); sg.resize(16, 0);
+            let mut sn = name.as_bytes().to_vec();
+            sn.resize(16, 0);
+            let mut sg = b"__DATA".to_vec();
+            sg.resize(16, 0);
             s.extend_from_slice(&sn);
             s.extend_from_slice(&sg);
             s.extend_from_slice(&addr.to_le_bytes());
             s.extend_from_slice(&size.to_le_bytes());
             s.extend_from_slice(&offset.to_le_bytes());
-            for _ in 0..7 { s.extend_from_slice(&0u32.to_le_bytes()); }
+            for _ in 0..7 {
+                s.extend_from_slice(&0u32.to_le_bytes());
+            }
             s
         }
         let mut seg = Vec::new();
-        let mut segn = b"__DATA".to_vec(); segn.resize(16, 0);
+        let mut segn = b"__DATA".to_vec();
+        segn.resize(16, 0);
         seg.extend_from_slice(&segn);
         seg.extend_from_slice(&(ds as u64).to_le_bytes());
         seg.extend_from_slice(&0x1000u64.to_le_bytes());
@@ -842,7 +941,10 @@ mod tests {
         p64(&mut d, 0x38, 0x50);
         d[0x50..0x58].copy_from_slice(b"MyProto\0");
         let r = Resolver::new(&img);
-        assert_eq!(read_protocol_list(&r, &img, &d, 0x10), vec!["MyProto".to_string()]);
+        assert_eq!(
+            read_protocol_list(&r, &img, &d, 0x10),
+            vec!["MyProto".to_string()]
+        );
     }
 
     #[test]
