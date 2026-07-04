@@ -554,7 +554,10 @@ struct RBlock {
 }
 
 fn call_name(t: u64, names: &std::collections::HashMap<u64, String>) -> String {
-    names.get(&t).cloned().unwrap_or_else(|| format!("sub_{t:x}"))
+    names
+        .get(&t)
+        .cloned()
+        .unwrap_or_else(|| format!("sub_{t:x}"))
 }
 
 enum Term {
@@ -1142,7 +1145,18 @@ mod tests {
         let order: Vec<u64> = blocks.iter().map(|b| b.start).collect();
         let by: HashMap<u64, usize> = order.iter().enumerate().map(|(i, a)| (*a, i)).collect();
         let mut out = Vec::new();
-        structure_emit(&blocks, &by, &order, 0, order.len(), u64::MAX, 1, &mut out);
+        let names: HashMap<u64, String> = HashMap::new();
+        structure_emit(
+            &blocks,
+            &by,
+            &order,
+            &names,
+            0,
+            order.len(),
+            u64::MAX,
+            1,
+            &mut out,
+        );
         let text = out.join("\n");
         assert!(text.contains("if (a != 0) {"), "outer if missing:\n{text}");
         assert!(text.contains("} else {"), "if/else not recovered:\n{text}");
@@ -1174,7 +1188,18 @@ mod tests {
         let order: Vec<u64> = blocks.iter().map(|b| b.start).collect();
         let by: HashMap<u64, usize> = order.iter().enumerate().map(|(i, a)| (*a, i)).collect();
         let mut out = Vec::new();
-        structure_emit(&blocks, &by, &order, 0, order.len(), u64::MAX, 1, &mut out);
+        let names: HashMap<u64, String> = HashMap::new();
+        structure_emit(
+            &blocks,
+            &by,
+            &order,
+            &names,
+            0,
+            order.len(),
+            u64::MAX,
+            1,
+            &mut out,
+        );
         let text = out.join("\n");
         assert!(text.contains("do {"), "no do-while:\n{text}");
         assert!(
@@ -1209,7 +1234,18 @@ mod tests {
         let order: Vec<u64> = blocks.iter().map(|b| b.start).collect();
         let by: HashMap<u64, usize> = order.iter().enumerate().map(|(i, a)| (*a, i)).collect();
         let mut out = Vec::new();
-        structure_emit(&blocks, &by, &order, 0, order.len(), u64::MAX, 1, &mut out);
+        let names: HashMap<u64, String> = HashMap::new();
+        structure_emit(
+            &blocks,
+            &by,
+            &order,
+            &names,
+            0,
+            order.len(),
+            u64::MAX,
+            1,
+            &mut out,
+        );
         let text = out.join("\n");
         assert!(text.contains("while (i < 10) {"), "no while loop:\n{text}");
         assert!(!text.contains("goto L_0;"), "back-edge not elided:\n{text}");
