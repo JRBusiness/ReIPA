@@ -36,8 +36,20 @@ enum Msg {
         which: Which,
         result: Result<String, String>,
     },
-    Chat(Result<String, String>),
+    /// Incremental output from the assistant while it runs.
+    ChatEvent(ChatEvent),
+    /// Assistant finished; `Some` carries an error message.
+    ChatEnd(Option<String>),
     Exported(Result<String, String>),
+}
+
+enum ChatEvent {
+    /// Reasoning / progress text (shown in a collapsible section).
+    Thinking(String),
+    /// A tool the assistant invoked (e.g. a `reipa` command).
+    Tool(String),
+    /// Final-answer text.
+    Text(String),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,6 +77,21 @@ enum Role {
 struct ChatMsg {
     role: Role,
     text: String,
+    thinking: String,
+    thinking_collapsed: bool,
+    streaming: bool,
+}
+
+impl ChatMsg {
+    fn new(role: Role, text: String) -> Self {
+        Self {
+            role,
+            text,
+            thinking: String::new(),
+            thinking_collapsed: false,
+            streaming: false,
+        }
+    }
 }
 
 struct App {
@@ -305,13 +332,39 @@ impl App {
                     self.error = Some(e);
                 }
                 Msg::Done { which, result } => self.finish(which, result),
-                Msg::Chat(r) => {
+                Msg::ChatEvent(ev) => {
+                    if let Some(last) = self.chat_msgs.last_mut() {
+                        match ev {
+                            ChatEvent::Thinking(s) => last.thinking.push_str(&s),
+                            ChatEvent::Tool(name) => {
+                                last.thinking.push_str(&format!("\n▶ {name}\n"));
+                            }
+                            ChatEvent::Text(s) => {
+                                if last.text.is_empty() && !s.trim().is_empty() {
+                                    // The answer is starting — fold the thinking away.
+                                    last.thinking_collapsed = true;
+                                }
+                                last.text.push_str(&s);
+                            }
+                        }
+                    }
+                }
+                Msg::ChatEnd(err) => {
                     self.chat_running = false;
-                    let (role, text) = match r {
-                        Ok(t) => (Role::Assistant, t),
-                        Err(e) => (Role::Error, e),
-                    };
-                    self.chat_msgs.push(ChatMsg { role, text });
+                    if let Some(last) = self.chat_msgs.last_mut() {
+                        last.streaming = false;
+                        last.thinking_collapsed = true;
+                        if let Some(e) = err {
+                            if last.text.is_empty() {
+                                last.role = Role::Error;
+                                last.text = e;
+                            } else {
+                                last.text.push_str(&format!("\n\n[error: {e}]"));
+                            }
+                        } else if last.text.is_empty() && last.thinking.is_empty() {
+                            last.text = "(no output)".to_string();
+                        }
+                    }
                 }
                 Msg::Exported(r) => {
                     self.exporting = false;
@@ -989,7 +1042,7 @@ impl App {
                                  current view.",
                             );
                         }
-                        for m in &self.chat_msgs {
+                        for (idx, m) in self.chat_msgs.iter().enumerate() {
                             let (name, color) = match m.role {
                                 Role::User => ("You", egui::Color32::from_rgb(100, 170, 240)),
                                 Role::Assistant => {
@@ -999,10 +1052,44 @@ impl App {
                             };
                             ui.add_space(6.0);
                             ui.colored_label(color, name);
-                            ui.add(
-                                egui::Label::new(egui::RichText::new(&m.text).monospace())
-                                    .selectable(true),
-                            );
+                            if !m.thinking.is_empty() {
+                                let mut header = egui::CollapsingHeader::new(
+                                    egui::RichText::new("💭 thinking").small().weak(),
+                                )
+                                .id_salt(("think", idx));
+                                // While streaming, drive the fold: open during
+                                // reasoning, collapse once the answer begins.
+                                if m.streaming {
+                                    header = header.open(Some(!m.thinking_collapsed));
+                                }
+                                header.show(ui, |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&m.thinking)
+                                                .monospace()
+                                                .weak()
+                                                .small(),
+                                        )
+                                        .selectable(true),
+                                    );
+                                });
+                            }
+                            if !m.text.is_empty() {
+                                ui.add(
+                                    egui::Label::new(egui::RichText::new(&m.text).monospace())
+                                        .selectable(true),
+                                );
+                            }
+                            if m.streaming {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.weak(if m.text.is_empty() {
+                                        "thinking…"
+                                    } else {
+                                        "responding…"
+                                    });
+                                });
+                            }
                         }
                     });
             });
@@ -1014,20 +1101,23 @@ impl App {
             return;
         }
         self.chat_input.clear();
-        self.chat_msgs.push(ChatMsg {
-            role: Role::User,
-            text: msg.clone(),
-        });
-        self.chat_running = true;
+        self.chat_msgs.push(ChatMsg::new(Role::User, msg.clone()));
+        // Build the prompt while the user message is the last entry, so history
+        // excludes it (it is re-appended as the trailing "User:" line).
         let prompt = self.build_prompt(&msg);
+        // Placeholder the streaming worker fills in as events arrive.
+        let mut assistant = ChatMsg::new(Role::Assistant, String::new());
+        assistant.streaming = true;
+        self.chat_msgs.push(assistant);
+        self.chat_running = true;
         let backend = self.backend;
         let binary = self.binary.clone();
         let reipa_exe = self.reipa_exe.clone();
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let r = run_assistant(backend, &prompt, binary.as_deref(), &reipa_exe);
-            let _ = tx.send(Msg::Chat(r));
+            let res = run_chat_stream(backend, &prompt, binary.as_deref(), &reipa_exe, &tx, &ctx);
+            let _ = tx.send(Msg::ChatEnd(res.err()));
             ctx.request_repaint();
         });
     }
@@ -1125,12 +1215,19 @@ fn allow_reipa_tool(cmd: &mut std::process::Command) {
     cmd.args(["--allowedTools", "Bash(reipa:*)"]);
 }
 
-fn run_assistant(
+/// Run the assistant CLI and stream its output back as `Msg::ChatEvent`s so the
+/// UI shows thinking, tool calls, and the answer as they happen instead of
+/// blocking until the whole (often multi-round, multi-second) run finishes.
+fn run_chat_stream(
     backend: Backend,
     prompt: &str,
     binary: Option<&Path>,
     reipa_exe: &Path,
-) -> Result<String, String> {
+    tx: &Sender<Msg>,
+    ctx: &egui::Context,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Read};
+
     let prog = match backend {
         Backend::Claude => "claude",
         Backend::Codex => "codex",
@@ -1140,6 +1237,10 @@ fn run_assistant(
     let tmp = dir.join("prompt.txt");
     std::fs::write(&tmp, prompt).map_err(|e| e.to_string())?;
     let infile = std::fs::File::open(&tmp).map_err(|e| e.to_string())?;
+    // An empty MCP config we point Claude at, to skip loading the user's MCP
+    // servers. Written to a file (not passed inline) to dodge cmd.exe quoting.
+    let empty_mcp = dir.join("empty-mcp.json");
+    let _ = std::fs::write(&empty_mcp, r#"{"mcpServers":{}}"#);
     let last_msg = dir.join("codex_last.txt");
     let codex_tools = backend == Backend::Codex && binary.is_some();
     if codex_tools {
@@ -1149,7 +1250,17 @@ fn run_assistant(
     let mut cmd = base_cmd(prog);
     match backend {
         Backend::Claude => {
-            cmd.arg("-p");
+            // stream-json emits one JSON event per line as the run progresses.
+            cmd.arg("-p")
+                .arg("--output-format")
+                .arg("stream-json")
+                .arg("--verbose")
+                // The assistant only needs the reipa CLI. Loading the user's MCP
+                // servers on every message adds seconds of cold-start for nothing,
+                // so start with an empty MCP config.
+                .arg("--strict-mcp-config")
+                .arg("--mcp-config")
+                .arg(&empty_mcp);
             if binary.is_some() {
                 allow_reipa_tool(&mut cmd);
             }
@@ -1183,36 +1294,127 @@ fn run_assistant(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     no_window(&mut cmd);
-    let out = cmd.output().map_err(|e| {
+    let mut child = cmd.spawn().map_err(|e| {
         format!("cannot launch '{prog}': {e}. Is the {prog} CLI installed and on PATH?")
     })?;
-    if out.status.success() {
-        let s = if codex_tools {
-            std::fs::read_to_string(&last_msg)
-                .unwrap_or_default()
-                .trim()
-                .to_string()
-        } else {
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-        Ok(if s.is_empty() {
-            "(no output)".into()
-        } else {
-            s
-        })
+
+    let stdout = child.stdout.take().ok_or("no stdout from assistant")?;
+    let reader = BufReader::new(stdout);
+    let mut got_text = false;
+
+    match backend {
+        Backend::Claude => {
+            for line in reader.lines() {
+                let Ok(line) = line else { break };
+                let t = line.trim();
+                if t.is_empty() {
+                    continue;
+                }
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(t) else {
+                    // Non-JSON (a banner, a warning): surface it as progress.
+                    let _ = tx.send(Msg::ChatEvent(ChatEvent::Thinking(format!("{t}\n"))));
+                    ctx.request_repaint();
+                    continue;
+                };
+                match v.get("type").and_then(|x| x.as_str()) {
+                    Some("assistant") => {
+                        if let Some(content) = v
+                            .get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| c.as_array())
+                        {
+                            for block in content {
+                                match block.get("type").and_then(|x| x.as_str()) {
+                                    Some("thinking") => {
+                                        if let Some(s) =
+                                            block.get("thinking").and_then(|x| x.as_str())
+                                        {
+                                            let _ = tx.send(Msg::ChatEvent(ChatEvent::Thinking(
+                                                s.to_string(),
+                                            )));
+                                        }
+                                    }
+                                    Some("text") => {
+                                        if let Some(s) = block.get("text").and_then(|x| x.as_str()) {
+                                            got_text = true;
+                                            let _ = tx.send(Msg::ChatEvent(ChatEvent::Text(
+                                                s.to_string(),
+                                            )));
+                                        }
+                                    }
+                                    Some("tool_use") => {
+                                        let name = block
+                                            .get("name")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("tool");
+                                        let arg = block
+                                            .get("input")
+                                            .and_then(|i| i.get("command"))
+                                            .and_then(|c| c.as_str())
+                                            .unwrap_or("");
+                                        let label = if arg.is_empty() {
+                                            name.to_string()
+                                        } else {
+                                            format!("{name}: {arg}")
+                                        };
+                                        let _ = tx.send(Msg::ChatEvent(ChatEvent::Tool(label)));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        ctx.request_repaint();
+                    }
+                    Some("result") if !got_text => {
+                        if let Some(s) = v.get("result").and_then(|x| x.as_str()) {
+                            got_text = true;
+                            let _ = tx.send(Msg::ChatEvent(ChatEvent::Text(s.to_string())));
+                            ctx.request_repaint();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Backend::Codex => {
+            // Codex has no line-JSON stream here; show its stdout as progress and
+            // take the clean final answer from the -o file when we have one.
+            let mut raw = String::new();
+            for line in reader.lines() {
+                let Ok(line) = line else { break };
+                raw.push_str(&line);
+                raw.push('\n');
+                let _ = tx.send(Msg::ChatEvent(ChatEvent::Thinking(format!("{line}\n"))));
+                ctx.request_repaint();
+            }
+            let answer = if codex_tools {
+                std::fs::read_to_string(&last_msg)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            } else {
+                raw.trim().to_string()
+            };
+            if !answer.is_empty() {
+                got_text = true;
+                let _ = tx.send(Msg::ChatEvent(ChatEvent::Text(answer)));
+                ctx.request_repaint();
+            }
+        }
+    }
+    let _ = got_text;
+
+    let mut stderr = String::new();
+    if let Some(mut se) = child.stderr.take() {
+        let _ = se.read_to_string(&mut stderr);
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else if stderr.trim().is_empty() {
+        Err(format!("{prog} exited with status {status}"))
     } else {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let msg = err.trim();
-        let msg = if msg.is_empty() {
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        } else {
-            msg.to_string()
-        };
-        Err(if msg.is_empty() {
-            format!("{prog} exited with status {}", out.status)
-        } else {
-            msg
-        })
+        Err(stderr.trim().to_string())
     }
 }
 
