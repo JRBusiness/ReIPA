@@ -1,5 +1,7 @@
 # ReIPA
 
+For **APK** please visit https://github.com/JRBusiness/REapk
+
 An iOS Mach-O toolkit written in Rust: a loader, an arm64 disassembler Objective-C and Swift metadata recovery, decompiler, and a native desktop explorer. It reads decrypted App Store binaries directly, with no dependency on Ghidra, IDA, radare2, or LLVM.
 
 ![alt text](image.png)

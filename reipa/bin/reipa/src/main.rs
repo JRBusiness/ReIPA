@@ -48,13 +48,47 @@ enum Command {
 fn read_input(path: &PathBuf) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     if bytes.starts_with(b"PK\x03\x04") {
-        return Err(
-            "input looks like a .ipa (zip); reipa operates on a raw Mach-O \
-                    executable. Extract Payload/<App>.app/<Executable> from the .ipa first."
-                .to_string(),
-        );
+        return extract_ipa_executable(&bytes);
     }
     Ok(bytes)
+}
+
+fn extract_ipa_executable(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| format!("input looks like a .ipa but is not a valid zip: {e}"))?;
+
+    let mut exact: Option<String> = None;
+    let mut fallback: Option<(String, u64)> = None;
+    for i in 0..zip.len() {
+        let f = zip.by_index(i).map_err(|e| e.to_string())?;
+        if f.is_dir() {
+            continue;
+        }
+        let name = f.name().replace('\\', "/");
+        let parts: Vec<&str> = name.split('/').collect();
+        if parts.len() == 3 && parts[0] == "Payload" && parts[1].ends_with(".app") {
+            let app = parts[1].trim_end_matches(".app");
+            if parts[2] == app {
+                exact = Some(name);
+                break;
+            }
+            if !parts[2].contains('.') {
+                let sz = f.size();
+                if fallback.as_ref().is_none_or(|(_, s)| sz > *s) {
+                    fallback = Some((name, sz));
+                }
+            }
+        }
+    }
+    let target = exact.or_else(|| fallback.map(|(n, _)| n)).ok_or_else(|| {
+        "no Payload/<App>.app/<Executable> found in .ipa (is this an iOS app archive?)".to_string()
+    })?;
+
+    let mut entry = zip.by_name(&target).map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(entry.size() as usize);
+    entry.read_to_end(&mut out).map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 fn uuid_string(uuid: &[u8; 16]) -> String {

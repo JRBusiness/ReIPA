@@ -14,6 +14,7 @@ reipa-objc.workspace = true
 reipa-swift.workspace = true
 reipa-arm64.workspace = true
 clap.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 reipa-macho.workspace = true
