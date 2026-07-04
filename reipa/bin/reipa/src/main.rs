@@ -1142,6 +1142,50 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    fn build_ipa(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::{Cursor, Write};
+        let mut buf = Vec::new();
+        {
+            let mut zw = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for (name, data) in files {
+                zw.start_file(*name, opts).unwrap();
+                zw.write_all(data).unwrap();
+            }
+            zw.finish().unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn ipa_extract_picks_named_executable() {
+        let ipa = build_ipa(&[
+            ("Payload/Foo.app/Info.plist", b"plist"),
+            ("Payload/Foo.app/icon.png", b"png"),
+            ("Payload/Foo.app/Foo", b"\xcf\xfa\xed\xfe MACHO"),
+        ]);
+        assert_eq!(
+            extract_ipa_executable(&ipa).unwrap(),
+            b"\xcf\xfa\xed\xfe MACHO"
+        );
+    }
+
+    #[test]
+    fn ipa_extract_falls_back_to_largest_extensionless() {
+        let ipa = build_ipa(&[
+            ("Payload/Bar.app/small", b"aa"),
+            ("Payload/Bar.app/BigExec", b"AAAAAAAAAAAAAAAA"),
+        ]);
+        assert_eq!(extract_ipa_executable(&ipa).unwrap(), b"AAAAAAAAAAAAAAAA");
+    }
+
+    #[test]
+    fn ipa_extract_rejects_non_ipa_zip() {
+        let zip = build_ipa(&[("notes.txt", b"hello")]);
+        assert!(extract_ipa_executable(&zip).is_err());
+    }
+
     fn rb(start: u64, stmts: &[&str], term: Term, succ: &[u64]) -> RBlock {
         RBlock {
             start,

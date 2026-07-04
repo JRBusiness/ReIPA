@@ -88,7 +88,7 @@ fn verify_reports_unencrypted() {
 }
 
 #[test]
-fn rejects_ipa_zip_with_guidance() {
+fn rejects_invalid_zip() {
     let dir = env!("CARGO_TARGET_TMPDIR");
     let path = std::path::Path::new(dir).join("reipa_test_fake.ipa");
     std::fs::write(&path, b"PK\x03\x04rest-of-zip").unwrap();
@@ -99,7 +99,39 @@ fn rejects_ipa_zip_with_guidance() {
         .unwrap();
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("Extract Payload"), "got: {stderr}");
+    assert!(stderr.contains("not a valid zip"), "got: {stderr}");
+}
+
+#[test]
+fn accepts_ipa_archive() {
+    use std::io::Write;
+    let dir = env!("CARGO_TARGET_TMPDIR");
+    let path = std::path::Path::new(dir).join("reipa_test.ipa");
+    let mut buf = Vec::new();
+    {
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zw.start_file("Payload/Foo.app/Info.plist", opts).unwrap();
+        zw.write_all(b"plist").unwrap();
+        zw.start_file("Payload/Foo.app/Foo", opts).unwrap();
+        zw.write_all(&minimal_macho()).unwrap();
+        zw.finish().unwrap();
+    }
+    std::fs::write(&path, &buf).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_reipa"))
+        .arg("verify")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("ENCRYPTED:  no"), "got: {stdout}");
+    assert!(stdout.contains("arm64"));
 }
 
 #[test]

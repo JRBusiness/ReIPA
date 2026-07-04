@@ -18,3 +18,4 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 reipa-macho.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
