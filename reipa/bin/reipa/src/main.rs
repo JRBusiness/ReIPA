@@ -38,10 +38,18 @@ enum Command {
     /// First-cut decompile: CFG-structured pseudocode for a function.
     Decompile {
         path: PathBuf,
-        /// Function start virtual address.
-        addr: String,
+        /// Function start virtual address. Omit and pass --all to decompile everything.
+        addr: Option<String>,
         #[arg(long, default_value_t = 512)]
         count: usize,
+        /// Decompile every function (from LC_FUNCTION_STARTS, or ObjC method IMPs
+        /// when the binary has no function-starts table).
+        #[arg(long)]
+        all: bool,
+        /// Decompile the whole binary into a structured multi-folder project at
+        /// this directory (classes/, categories/, functions/, manifest.csv).
+        #[arg(long, value_name = "DIR")]
+        project: Option<PathBuf>,
     },
 }
 
@@ -362,95 +370,370 @@ fn run() -> Result<(), String> {
                 }
             }
         }
-        Command::Decompile { path, addr, count } => {
+        Command::Decompile {
+            path,
+            addr,
+            count,
+            all,
+            project,
+        } => {
+            use std::io::Write;
             let bytes = read_input(&path)?;
             let macho = reipa_macho::MachOImage::parse(&bytes).map_err(|e| e.to_string())?;
             let slice = reipa_macho::fat::select_arm64_slice(&bytes).map_err(|e| e.to_string())?;
             let sdata = slice.data;
-            let start = parse_addr(&addr)?;
+            let (names, sigs) = build_names(&bytes);
 
+            if let Some(dir) = project {
+                let summary =
+                    export_project(&macho, sdata, &bytes, count, &dir, &names, &sigs)?;
+                println!("{summary}");
+                return Ok(());
+            }
+
+            if all {
+                // Every function we can name: function-starts table first, and if
+                // the binary lacks one, fall back to the Objective-C method IMPs.
+                let mut starts: Vec<u64> = macho.function_starts.clone();
+                if starts.is_empty() {
+                    starts = names.keys().copied().collect();
+                }
+                starts.sort_unstable();
+                starts.dedup();
+                let stdout = std::io::stdout();
+                let mut w = std::io::BufWriter::new(stdout.lock());
+                let _ = writeln!(w, "// full decompilation: {} functions\n", starts.len());
+                for i in 0..starts.len() {
+                    // starts is sorted, so the next function is the following entry.
+                    // Passing it in keeps the per-function cost O(1), not O(n).
+                    let next_start = starts.get(i + 1).copied();
+                    let code =
+                        decompile_one(&macho, sdata, starts[i], next_start, count, &names, &sigs);
+                    let _ = write!(w, "{code}");
+                    let _ = writeln!(w);
+                }
+                return Ok(());
+            }
+
+            let addr = addr.ok_or_else(|| {
+                "decompile needs a function address (or pass --all to decompile everything)"
+                    .to_string()
+            })?;
+            let start = parse_addr(&addr)?;
             let next_start = macho
                 .function_starts
                 .iter()
                 .copied()
                 .filter(|&a| a > start)
                 .min();
-
-            let mut insns = Vec::new();
-            let mut furthest = start;
-            let mut cur = start;
-            for _ in 0..count {
-                if let Some(ns) = next_start {
-                    if cur >= ns {
-                        break;
-                    }
-                }
-                let off = match macho.vmaddr_to_offset(cur) {
-                    Some(o) => o,
-                    None => break,
-                };
-                let word = match reipa_macho::reader::Reader::at(sdata, off)
-                    .ok()
-                    .and_then(|mut r| r.read_u32().ok())
-                {
-                    Some(w) => w,
-                    None => break,
-                };
-                let insn = reipa_arm64::decode(word, cur);
-                if let reipa_arm64::Flow::Branch(t) | reipa_arm64::Flow::CondBranch(t) = insn.flow {
-                    if t > furthest && next_start.is_none_or(|ns| t < ns) {
-                        furthest = t;
-                    }
-                }
-                let is_ret = insn.flow == reipa_arm64::Flow::Return;
-                insns.push(insn);
-                if is_ret && cur >= furthest {
-                    break;
-                }
-                cur = cur.wrapping_add(4);
-            }
-
-            let (names, sigs) = build_names(&bytes);
-            let fname = names
-                .get(&start)
-                .cloned()
-                .unwrap_or_else(|| format!("sub_{start:x}"));
-            let blocks = reipa_arm64::cfg::build_blocks(&insns);
-            let rblocks: Vec<RBlock> = blocks.iter().map(|b| render_block(b, &names)).collect();
-            let by_addr: std::collections::HashMap<u64, usize> = rblocks
-                .iter()
-                .enumerate()
-                .map(|(i, rb)| (rb.start, i))
-                .collect();
-            let order: Vec<u64> = rblocks.iter().map(|rb| rb.start).collect();
-            println!(
-                "// {fname}  @0x{start:x}  ({} blocks, {} instructions)",
-                blocks.len(),
-                insns.len()
+            print!(
+                "{}",
+                decompile_one(&macho, sdata, start, next_start, count, &names, &sigs)
             );
-            if let Some(sig) = sigs.get(&start) {
-                println!("// signature: {sig}   [x0=self, x1=_cmd, x2..=args]");
-            }
-            println!("{fname}() {{");
-            let mut out = Vec::new();
-            structure_emit(
-                &rblocks,
-                &by_addr,
-                &order,
-                &names,
-                0,
-                order.len(),
-                u64::MAX,
-                1,
-                &mut out,
-            );
-            for line in out {
-                println!("{line}");
-            }
-            println!("}}");
             Ok(())
         }
     }
+}
+
+/// Decompile a single function starting at `start`, returning the rendered
+/// pseudocode (header comment + body) as a string.
+fn decompile_one(
+    macho: &reipa_macho::MachOImage,
+    sdata: &[u8],
+    start: u64,
+    next_start: Option<u64>,
+    count: usize,
+    names: &NameMap,
+    sigs: &NameMap,
+) -> String {
+    use std::fmt::Write;
+
+    let mut insns = Vec::new();
+    let mut furthest = start;
+    let mut cur = start;
+    for _ in 0..count {
+        if let Some(ns) = next_start {
+            if cur >= ns {
+                break;
+            }
+        }
+        let off = match macho.vmaddr_to_offset(cur) {
+            Some(o) => o,
+            None => break,
+        };
+        let word = match reipa_macho::reader::Reader::at(sdata, off)
+            .ok()
+            .and_then(|mut r| r.read_u32().ok())
+        {
+            Some(w) => w,
+            None => break,
+        };
+        let insn = reipa_arm64::decode(word, cur);
+        if let reipa_arm64::Flow::Branch(t) | reipa_arm64::Flow::CondBranch(t) = insn.flow {
+            if t > furthest && next_start.is_none_or(|ns| t < ns) {
+                furthest = t;
+            }
+        }
+        let is_ret = insn.flow == reipa_arm64::Flow::Return;
+        insns.push(insn);
+        if is_ret && cur >= furthest {
+            break;
+        }
+        cur = cur.wrapping_add(4);
+    }
+
+    let fname = names
+        .get(&start)
+        .cloned()
+        .unwrap_or_else(|| format!("sub_{start:x}"));
+    let blocks = reipa_arm64::cfg::build_blocks(&insns);
+    let rblocks: Vec<RBlock> = blocks.iter().map(|b| render_block(b, names)).collect();
+    let by_addr: std::collections::HashMap<u64, usize> = rblocks
+        .iter()
+        .enumerate()
+        .map(|(i, rb)| (rb.start, i))
+        .collect();
+    let order: Vec<u64> = rblocks.iter().map(|rb| rb.start).collect();
+
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "// {fname}  @0x{start:x}  ({} blocks, {} instructions)",
+        blocks.len(),
+        insns.len()
+    );
+    if let Some(sig) = sigs.get(&start) {
+        let _ = writeln!(s, "// signature: {sig}   [x0=self, x1=_cmd, x2..=args]");
+    }
+    let _ = writeln!(s, "{fname}() {{");
+    let mut out = Vec::new();
+    structure_emit(
+        &rblocks,
+        &by_addr,
+        &order,
+        names,
+        0,
+        order.len(),
+        u64::MAX,
+        1,
+        &mut out,
+    );
+    for line in out {
+        let _ = writeln!(s, "{line}");
+    }
+    let _ = writeln!(s, "}}");
+    s
+}
+
+/// Keep only characters that are safe in a single path segment on every OS,
+/// mapping everything else (dots, spaces, `<>`, commas from Swift generics) to
+/// `_`, and cap the length so deeply generic names don't blow the path limit.
+fn sanitize_seg(s: &str) -> String {
+    let mut out: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() {
+        out.push('_');
+    }
+    if out.len() > 80 {
+        out.truncate(80);
+    }
+    out
+}
+
+/// Relative path (under the project root) for a class or category's methods.
+/// Swift `Module.Type` names nest under a per-module folder; plain Objective-C
+/// class names sit directly under `classes/`.
+fn class_relpath(cls: &str, cat: Option<&str>) -> String {
+    if let Some(c) = cat {
+        return format!(
+            "categories/{}+{}.c",
+            sanitize_seg(&cls.replace('.', "_")),
+            sanitize_seg(c)
+        );
+    }
+    match cls.split_once('.') {
+        Some((module, rest)) => {
+            format!("classes/{}/{}.c", sanitize_seg(module), sanitize_seg(rest))
+        }
+        None => format!("classes/{}.c", sanitize_seg(cls)),
+    }
+}
+
+/// Map every Objective-C method IMP address to the project-relative file its
+/// class (or category) should live in.
+fn build_groups(bytes: &[u8]) -> NameMap {
+    let mut g = std::collections::HashMap::new();
+    if let Ok(classes) = reipa_objc::parse_objc_classes(bytes) {
+        for c in &classes {
+            let rel = class_relpath(&dm(&c.name), None);
+            for m in c.instance_methods.iter().chain(c.class_methods.iter()) {
+                if m.imp != 0 {
+                    g.entry(m.imp).or_insert_with(|| rel.clone());
+                }
+            }
+        }
+    }
+    if let Ok(cats) = reipa_objc::parse_objc_categories(bytes) {
+        for cat in &cats {
+            let cls = cat
+                .class_name
+                .as_deref()
+                .map(dm)
+                .unwrap_or_else(|| "Unknown".to_string());
+            let rel = class_relpath(&cls, Some(&cat.name));
+            for m in cat.instance_methods.iter().chain(cat.class_methods.iter()) {
+                if m.imp != 0 {
+                    g.entry(m.imp).or_insert_with(|| rel.clone());
+                }
+            }
+        }
+    }
+    g
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+fn write_rel(dir: &std::path::Path, rel: &str, content: &str) -> Result<(), String> {
+    let path = dir.join(rel);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Decompile the whole binary into a structured project directory. Named
+/// (class/category) methods are grouped one file per class; unnamed functions
+/// are streamed in address order into chunked files so we never hold the whole
+/// (potentially multi-gigabyte) output in memory at once.
+fn export_project(
+    macho: &reipa_macho::MachOImage,
+    sdata: &[u8],
+    bytes: &[u8],
+    count: usize,
+    dir: &std::path::Path,
+    names: &NameMap,
+    sigs: &NameMap,
+) -> Result<String, String> {
+    use std::io::Write;
+    const CHUNK: usize = 1000; // unnamed functions per file
+
+    let groups = build_groups(bytes);
+    let mut starts: Vec<u64> = macho.function_starts.clone();
+    if starts.is_empty() {
+        starts = names.keys().copied().collect();
+    }
+    starts.sort_unstable();
+    starts.dedup();
+
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let mf = std::fs::File::create(dir.join("manifest.csv")).map_err(|e| e.to_string())?;
+    let mut manifest = std::io::BufWriter::new(mf);
+    let _ = writeln!(manifest, "address,name,file");
+
+    // Named-method files are bounded by method count, so buffering them is fine.
+    let mut class_files: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut named = 0usize;
+    let mut unnamed = 0usize;
+
+    let mut chunk = String::new();
+    let mut chunk_first = 0u64;
+    let mut chunk_n = 0usize;
+    let mut chunk_idx = 0usize;
+
+    for i in 0..starts.len() {
+        let start = starts[i];
+        let next = starts.get(i + 1).copied();
+        let code = decompile_one(macho, sdata, start, next, count, names, sigs);
+        let fname = names
+            .get(&start)
+            .cloned()
+            .unwrap_or_else(|| format!("sub_{start:x}"));
+
+        if let Some(rel) = groups.get(&start) {
+            let buf = class_files.entry(rel.clone()).or_default();
+            if buf.is_empty() {
+                buf.push_str(&format!("// {rel}\n// Decompiled by ReIPA\n\n"));
+            }
+            buf.push_str(&code);
+            buf.push('\n');
+            let _ = writeln!(manifest, "0x{start:x},{},{}", csv_field(&fname), rel);
+            named += 1;
+        } else {
+            if chunk_n == 0 {
+                chunk_first = start;
+            }
+            let rel = format!(
+                "functions/{:03x}/funcs_{:x}.c",
+                chunk_idx / 256,
+                chunk_first
+            );
+            chunk.push_str(&code);
+            chunk.push('\n');
+            let _ = writeln!(manifest, "0x{start:x},{},{}", csv_field(&fname), rel);
+            chunk_n += 1;
+            unnamed += 1;
+            if chunk_n >= CHUNK {
+                write_rel(dir, &rel, &chunk)?;
+                chunk.clear();
+                chunk_n = 0;
+                chunk_idx += 1;
+            }
+        }
+    }
+    if chunk_n > 0 {
+        let rel = format!(
+            "functions/{:03x}/funcs_{:x}.c",
+            chunk_idx / 256,
+            chunk_first
+        );
+        write_rel(dir, &rel, &chunk)?;
+    }
+
+    let class_count = class_files.len();
+    for (rel, content) in &class_files {
+        write_rel(dir, rel, content)?;
+    }
+    manifest.flush().map_err(|e| e.to_string())?;
+
+    let total = named + unnamed;
+    let readme = format!(
+        "# Decompiled project\n\n\
+         Generated by ReIPA. This is best-effort pseudocode for static analysis, \
+         **not compilable C** — register-level operands, unresolved types, and \
+         `goto` remain where the decompiler cannot prove more structure.\n\n\
+         ## Layout\n\n\
+         - `classes/` — one file per Objective-C / Swift class (Swift types are \
+         nested under their module folder).\n\
+         - `categories/` — Objective-C categories, `Class+Category.c`.\n\
+         - `functions/` — unnamed functions (`sub_*`) in address order, chunked \
+         {CHUNK} per file.\n\
+         - `manifest.csv` — every function: address, name, and its file.\n\n\
+         ## Summary\n\n\
+         - Total functions: {total}\n\
+         - Named (class/category) methods: {named} across {class_count} class files\n\
+         - Unnamed functions: {unnamed}\n"
+    );
+    std::fs::write(dir.join("README.md"), readme).map_err(|e| e.to_string())?;
+
+    Ok(format!(
+        "wrote {total} functions to {} ({named} named across {class_count} class files, {unnamed} unnamed)",
+        dir.display()
+    ))
 }
 
 fn is_reg_tok(s: &str) -> bool {
@@ -1362,6 +1645,36 @@ mod tests {
         let stmts = vec!["x0 = 0x1234;".to_string(), "foo();".to_string()];
         let out = propagate(&stmts);
         assert_eq!(out, vec!["x0 = 0x1234;".to_string(), "foo();".to_string()]);
+    }
+
+    #[test]
+    fn class_relpath_layout() {
+        // Plain Objective-C class sits directly under classes/.
+        assert_eq!(class_relpath("NSObject", None), "classes/NSObject.c");
+        // Swift Module.Type nests under a per-module folder.
+        assert_eq!(
+            class_relpath("FBSDKCoreKit.AEMNetworker", None),
+            "classes/FBSDKCoreKit/AEMNetworker.c"
+        );
+        // Categories go under categories/ as Class+Category.c, dots flattened.
+        assert_eq!(
+            class_relpath("FBSDKCoreKit.BridgeAPI", Some("FBSDKCoreKit")),
+            "categories/FBSDKCoreKit_BridgeAPI+FBSDKCoreKit.c"
+        );
+    }
+
+    #[test]
+    fn sanitize_seg_is_path_safe() {
+        assert_eq!(sanitize_seg("Foo<Bar, Baz>"), "Foo_Bar__Baz_");
+        assert_eq!(sanitize_seg(""), "_");
+        assert!(sanitize_seg(&"x".repeat(200)).len() <= 80);
+    }
+
+    #[test]
+    fn csv_field_quotes_when_needed() {
+        assert_eq!(csv_field("sub_100"), "sub_100");
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+        assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
     }
 
     #[test]

@@ -37,6 +37,7 @@ enum Msg {
         result: Result<String, String>,
     },
     Chat(Result<String, String>),
+    Exported(Result<String, String>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -93,6 +94,10 @@ struct App {
     classes_loading: bool,
     class_filter: String,
     class_sel: Option<usize>,
+    class_checked: std::collections::HashSet<usize>,
+
+    export_msg: Option<String>,
+    exporting: bool,
 
     swift: Option<Vec<String>>,
     swift_loading: bool,
@@ -141,6 +146,9 @@ impl App {
             classes_loading: false,
             class_filter: String::new(),
             class_sel: None,
+            class_checked: std::collections::HashSet::new(),
+            export_msg: None,
+            exporting: false,
             swift: None,
             swift_loading: false,
             swift_filter: String::new(),
@@ -165,6 +173,7 @@ impl App {
         self.classes = None;
         self.class_sel = None;
         self.class_filter.clear();
+        self.class_checked.clear();
         self.swift = None;
         self.swift_filter.clear();
         self.swift_sel = None;
@@ -187,6 +196,76 @@ impl App {
         std::thread::spawn(move || {
             let result = run_cli(&exe, &args);
             let _ = tx.send(Msg::Done { which, result });
+            ctx.request_repaint();
+        });
+    }
+
+    fn base_name(&self) -> String {
+        self.binary
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "reipa".to_string())
+    }
+
+    /// Run a `reipa` subcommand and stream its stdout directly into a file the
+    /// user picks. Streaming (rather than capturing to memory) matters: a full
+    /// decompile or __text disassembly of a large binary can be many gigabytes.
+    fn start_export(&mut self, ctx: &egui::Context, args: Vec<String>, default_name: String) {
+        let Some(path) = self.binary.clone() else {
+            return;
+        };
+        let Some(save) = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .save_file()
+        else {
+            return;
+        };
+        let mut args = args;
+        args.insert(1, path.to_string_lossy().into_owned());
+        self.exporting = true;
+        self.export_msg = Some(format!("Exporting to {}…", save.display()));
+        let exe = self.reipa_exe.clone();
+        let tx = self.tx.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let r = run_cli_to_file(&exe, &args, &save).map(|_| save.display().to_string());
+            let _ = tx.send(Msg::Exported(r));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Decompile the whole binary into a structured multi-folder project the
+    /// user picks. The CLI writes the tree itself, so we only capture its short
+    /// stdout summary.
+    fn start_project_export(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.binary.clone() else {
+            return;
+        };
+        let Some(dir) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        self.exporting = true;
+        self.export_msg = Some(format!("Decompiling project into {}…", dir.display()));
+        let exe = self.reipa_exe.clone();
+        let args = vec![
+            "decompile".to_string(),
+            path.to_string_lossy().into_owned(),
+            "--project".to_string(),
+            dir.to_string_lossy().into_owned(),
+        ];
+        let tx = self.tx.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let r = run_cli(&exe, &args).map(|out| {
+                let summary = out.lines().last().unwrap_or("").trim();
+                if summary.is_empty() {
+                    dir.display().to_string()
+                } else {
+                    summary.to_string()
+                }
+            });
+            let _ = tx.send(Msg::Exported(r));
             ctx.request_repaint();
         });
     }
@@ -233,6 +312,13 @@ impl App {
                         Err(e) => (Role::Error, e),
                     };
                     self.chat_msgs.push(ChatMsg { role, text });
+                }
+                Msg::Exported(r) => {
+                    self.exporting = false;
+                    self.export_msg = Some(match r {
+                        Ok(p) => format!("Saved to {p}"),
+                        Err(e) => format!("Export failed: {e}"),
+                    });
                 }
             }
         }
@@ -368,6 +454,11 @@ impl eframe::App for App {
                         } else {
                             egui::Visuals::light()
                         });
+                        // set_visuals only takes effect next frame; in reactive
+                        // mode nothing schedules that frame, so the theme change
+                        // wouldn't show until the next interaction (a second
+                        // click). Force the follow-up repaint now.
+                        ctx.request_repaint();
                     }
                 });
             });
@@ -389,6 +480,20 @@ impl eframe::App for App {
                     egui::Color32::from_rgb(220, 150, 60),
                     "🔒  This binary is FairPlay-encrypted — class/Swift/string data will be garbage. Decrypt the .ipa first.",
                 );
+            }
+            if self.exporting || self.export_msg.is_some() {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    if self.exporting {
+                        ui.spinner();
+                    }
+                    if let Some(m) = &self.export_msg {
+                        ui.colored_label(egui::Color32::from_rgb(120, 180, 120), format!("⬇  {m}"));
+                    }
+                    if !self.exporting && ui.small_button("✕").clicked() {
+                        self.export_msg = None;
+                    }
+                });
             }
             ui.add_space(2.0);
         });
@@ -449,6 +554,7 @@ impl App {
     fn ui_classes(&mut self, ctx: &egui::Context) {
         let classes = self.classes.take();
         let data: &[(String, String)] = classes.as_deref().unwrap_or(&[]);
+        let base = self.base_name();
 
         egui::SidePanel::left("class_list")
             .resizable(true)
@@ -465,6 +571,26 @@ impl App {
                         ui.label("dumping classes…");
                     });
                 }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(!data.is_empty(), egui::Button::new("⬇ Export all"))
+                        .on_hover_text("Export every class @interface to a file")
+                        .clicked()
+                    {
+                        export_class_bodies(data, None, &base, &mut self.export_msg);
+                    }
+                    let n = self.class_checked.len();
+                    if ui
+                        .add_enabled(n > 0, egui::Button::new(format!("⬇ Selected ({n})")))
+                        .on_hover_text("Export only the checked classes")
+                        .clicked()
+                    {
+                        export_class_bodies(data, Some(&self.class_checked), &base, &mut self.export_msg);
+                    }
+                    if n > 0 && ui.small_button("clear").clicked() {
+                        self.class_checked.clear();
+                    }
+                });
                 ui.separator();
                 let needle = self.class_filter.to_lowercase();
                 let idx: Vec<usize> = data
@@ -483,10 +609,20 @@ impl App {
                     .auto_shrink([false, false])
                     .show_rows(ui, row_h, idx.len(), |ui, range| {
                         for &vi in &idx[range] {
-                            let selected = self.class_sel == Some(vi);
-                            if ui.selectable_label(selected, &data[vi].0).clicked() {
-                                self.class_sel = Some(vi);
-                            }
+                            ui.horizontal(|ui| {
+                                let mut checked = self.class_checked.contains(&vi);
+                                if ui.checkbox(&mut checked, "").clicked() {
+                                    if checked {
+                                        self.class_checked.insert(vi);
+                                    } else {
+                                        self.class_checked.remove(&vi);
+                                    }
+                                }
+                                let selected = self.class_sel == Some(vi);
+                                if ui.selectable_label(selected, &data[vi].0).clicked() {
+                                    self.class_sel = Some(vi);
+                                }
+                            });
                         }
                     });
             });
@@ -557,6 +693,14 @@ impl App {
                         ui.spinner();
                     }
                 });
+                if ui
+                    .add_enabled(!self.exporting, egui::Button::new("⬇ Export Swift types"))
+                    .on_hover_text("Save the full Swift type listing to a file")
+                    .clicked()
+                {
+                    let name = format!("{}.swift-types.txt", self.base_name());
+                    self.start_export(ctx, vec!["swift-types".into()], name);
+                }
                 ui.separator();
                 let needle = self.swift_filter.to_lowercase();
                 let idx: Vec<usize> = data
@@ -715,6 +859,16 @@ impl App {
                         vec!["disasm".into(), addr, "--count".into(), count],
                     );
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(!self.exporting, egui::Button::new("⬇ Export full __text"))
+                        .on_hover_text("Disassemble all of __text and save to a file")
+                        .clicked()
+                    {
+                        let name = format!("{}.disasm.txt", self.base_name());
+                        self.start_export(ctx, vec!["disasm".into()], name);
+                    }
+                });
             });
             ui.separator();
             lines_pane(ui, &self.disasm_lines);
@@ -737,6 +891,28 @@ impl App {
                     let addr = self.decomp_addr.trim().to_string();
                     self.dispatch(ctx, Which::Decompile, vec!["decompile".into(), addr]);
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(!self.exporting, egui::Button::new("⬇ Export project"))
+                        .on_hover_text(
+                            "Decompile the whole binary into a structured multi-folder \
+                             project (classes/, categories/, functions/, manifest.csv).\n\
+                             Pick a destination folder. Large binaries have hundreds of \
+                             thousands of functions, so this can take a while.",
+                        )
+                        .clicked()
+                    {
+                        self.start_project_export(ctx);
+                    }
+                    if ui
+                        .add_enabled(!self.exporting, egui::Button::new("⬇ Single file"))
+                        .on_hover_text("Decompile every function into one flat .c file")
+                        .clicked()
+                    {
+                        let name = format!("{}.decompiled.c", self.base_name());
+                        self.start_export(ctx, vec!["decompile".into(), "--all".into()], name);
+                    }
+                });
             });
             ui.separator();
             output_pane(ui, self.decomp_out.as_deref());
@@ -1238,6 +1414,71 @@ fn run_cli(exe: &Path, args: &[String]) -> Result<String, String> {
             err.into_owned()
         })
     }
+}
+
+/// Run `reipa` with stdout redirected straight into `out_path`, capturing only
+/// stderr for error reporting. Avoids buffering huge exports in memory.
+fn run_cli_to_file(exe: &Path, args: &[String], out_path: &Path) -> Result<(), String> {
+    use std::io::Read;
+    let file = std::fs::File::create(out_path)
+        .map_err(|e| format!("cannot create {}: {e}", out_path.display()))?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(args)
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::piped());
+    no_window(&mut cmd);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
+    let mut stderr = String::new();
+    if let Some(mut se) = child.stderr.take() {
+        let _ = se.read_to_string(&mut stderr);
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else if stderr.trim().is_empty() {
+        Err(format!("reipa exited with {status}"))
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Write class @interface bodies to a user-picked file. `selected` limits the
+/// export to the checked class indices; `None` exports every class.
+fn export_class_bodies(
+    data: &[(String, String)],
+    selected: Option<&std::collections::HashSet<usize>>,
+    base: &str,
+    msg: &mut Option<String>,
+) {
+    let default_name = match selected {
+        Some(_) => format!("{base}.classes.selected.h"),
+        None => format!("{base}.classes.h"),
+    };
+    let Some(save) = rfd::FileDialog::new()
+        .set_file_name(&default_name)
+        .save_file()
+    else {
+        return;
+    };
+    let mut buf = String::new();
+    for (i, (_, body)) in data.iter().enumerate() {
+        if let Some(sel) = selected {
+            if !sel.contains(&i) {
+                continue;
+            }
+        }
+        buf.push_str(body);
+        if !body.ends_with('\n') {
+            buf.push('\n');
+        }
+        buf.push('\n');
+    }
+    *msg = Some(match std::fs::write(&save, buf) {
+        Ok(()) => format!("Saved to {}", save.display()),
+        Err(e) => format!("Export failed: {e}"),
+    });
 }
 
 fn locate_sibling(stem: &str) -> PathBuf {
