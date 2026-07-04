@@ -1,4 +1,4 @@
-# ReIPA — iOS Mach-O disassembler & decompiler in Rust
+# ReIPA: iOS Mach-O disassembler & decompiler in Rust
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org/)
@@ -9,14 +9,14 @@
 **ReIPA** is a fast iOS reverse-engineering toolkit written in Rust: a Mach-O
 loader, an arm64 (AArch64) disassembler, Objective-C and Swift metadata
 recovery, a decompiler, and a native desktop explorer. It reads decrypted
-App Store `.ipa` / Mach-O binaries directly — with **no dependency on Ghidra,
+App Store `.ipa` / Mach-O binaries directly, with **no dependency on Ghidra,
 IDA Pro, radare2, or LLVM**.
 
-> **Why not Ghidra-based tools?** Decompilers like Malimite wrap the Ghidra
-> engine, which means a JVM, a multi-gigabyte install, and minutes of analysis
-> per large binary. ReIPA is a self-contained native binary that parses Mach-O,
-> arm64, and Objective-C/Swift metadata itself — so a class dump that takes
-> `rabin2`/Ghidra-based tooling a minute or two finishes in a couple of seconds.
+> **Why not Ghidra-based tools?** Many iOS decompilers wrap the Ghidra engine,
+> which means a JVM, a multi-gigabyte install, and minutes of analysis per large
+> binary. ReIPA is a self-contained native binary that parses Mach-O, arm64, and
+> Objective-C/Swift metadata itself, so a class dump that takes `rabin2` a minute
+> or two finishes in a couple of seconds.
 
 If you need Android instead, see the sister project: **[REapk](https://github.com/JRBusiness/REapk)**.
 
@@ -40,32 +40,32 @@ two.
 
 ## Features
 
-- **Mach-O loader** — headers, load commands, segments, symbols, dyld info,
+- **Mach-O loader:** headers, load commands, segments, symbols, dyld info,
   chained fixups, and FairPlay (`cryptid`) detection.
-- **arm64 / AArch64 disassembler** — 100% decode coverage on `__text`,
+- **arm64 / AArch64 disassembler:** 100% decode coverage on `__text`,
   validated against Capstone on full App Store binaries.
-- **Objective-C class dump** — `@interface` output with typed ivars, methods,
+- **Objective-C class dump:** `@interface` output with typed ivars, methods,
   protocols, and categories; resolves external superclasses via dyld binds.
-- **Swift metadata recovery** — types and demangling from `__swift5_*`.
-- **Decompiler** — CFG construction, condition recovery, if/else and loop
+- **Swift metadata recovery:** types and demangling from `__swift5_*`.
+- **Decompiler:** CFG construction, condition recovery, if/else and loop
   structuring, and function naming from Objective-C method implementations.
-- **Native desktop GUI** — searchable class browser, jump-to-decompile,
+- **Native desktop GUI:** searchable class browser, jump-to-decompile,
   syntax-highlighted disassembly and pseudocode, and an optional AI chat panel.
 
 ## How it compares
 
-|                         | **ReIPA**            | Malimite            | Ghidra              | IDA Pro        |
-| ----------------------- | -------------------- | ------------------- | ------------------- | -------------- |
-| Engine                  | Native Rust          | Ghidra (JVM)        | JVM                 | Native         |
-| Install size            | Single binary        | JAR + Ghidra        | Multi-GB            | Commercial     |
-| External dependencies   | **None**             | Ghidra, Java        | Java                | —              |
-| Reads `.ipa` directly   | ✅                   | ✅                  | ❌                  | ❌             |
-| Objective-C class dump  | ✅ (typed ivars)     | ✅                  | partial             | ✅ (plugin)    |
-| Swift metadata          | ✅                   | ✅                  | partial             | partial        |
-| FairPlay detection      | ✅                   | —                   | ❌                  | ❌             |
-| Price                   | Free (MIT)           | Free (Apache-2.0)   | Free                | $$$            |
+|                         | **ReIPA**            | Ghidra              | IDA Pro        |
+| ----------------------- | -------------------- | ------------------- | -------------- |
+| Engine                  | Native Rust          | JVM                 | Native         |
+| Install size            | Single binary        | Multi-GB            | Commercial     |
+| External dependencies   | **None**             | Java                | n/a            |
+| Reads `.ipa` directly   | ✅                   | ❌                  | ❌             |
+| Objective-C class dump  | ✅ (typed ivars)     | partial             | ✅ (plugin)    |
+| Swift metadata          | ✅                   | partial             | partial        |
+| FairPlay detection      | ✅                   | ❌                  | ❌             |
+| Price                   | Free (MIT)           | Free                | $$$            |
 
-ReIPA does not aim to replace a full Ghidra/IDA workflow — it aims to be the
+ReIPA does not aim to replace a full Ghidra/IDA workflow. It aims to be the
 *fast first pass*: open a 300 MB App Store binary, dump every class, and start
 reading decompiled functions in seconds instead of minutes.
 
@@ -77,9 +77,9 @@ App Store binaries.
 
 | Task                         | ReIPA vs baseline    | Baseline tool     |
 | ---------------------------- | -------------------- | ----------------- |
-| Full `__text` disassembly    | **~9–12× faster**    | `llvm-objdump`    |
-| Objective-C class dump       | **~24–44× faster**   | `rabin2 -c`       |
-| Header / load-command info   | **~38–55× faster**   | `rabin2 -I`       |
+| Full `__text` disassembly    | **~9-12x faster**    | `llvm-objdump`    |
+| Objective-C class dump       | **~24-44x faster**   | `rabin2 -c`       |
+| Header / load-command info   | **~38-55x faster**   | `rabin2 -I`       |
 
 On a 300 MB DoorDash binary, ReIPA dumps every Objective-C class in a couple of
 seconds where `rabin2 -c` takes a minute or two.
@@ -168,4 +168,4 @@ Capstone on full binaries through the benchmark harness.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
